@@ -31,5 +31,14 @@ The code will look like the following:
 |     | Red hat Linux 5.3 image for virtual box | The host machine should have at least:  2.2 GHz Core i3/i5 processor or AMD equivalent. 8GB or 16GB of RAM, the higher the better. |     |
 |    |    | VirtualBox Workstation running the following Operating Systems: Redhat Linux 5.3 |  |
 
+## Related Products:
+* [Mac Application Development by Example: Beginner's Guide](https://www.packtpub.com/application-development/mac-application-development-example-beginners-guide?utm_source=github&utm_medium=repository&utm_content=9781849693820)
+
+* [IT Inventory and Resource Management with OCS Inventory NG 1.02](https://www.packtpub.com/hardware-and-creative/it-inventory-and-resource-management-ocs-inventory-ng-102?utm_source=github&utm_medium=repository&utm_content=9781849511100)
+
+* [JBoss EAP6 High Availability](https://www.packtpub.com/application-development/jboss-eap6-high-availability?utm_source=github&utm_medium=repository&utm_content=9781783282432)
+
+###Suggestions and Feedback
+[Click here](https://docs.google.com/forms/d/e/1FAIpQLSe5qwunkGf6PUvzPirPDtuy1Du5Rlzew23UBp2S-P3wB-GcwQ/viewform) if you have any feedback or suggestions.
 
 
