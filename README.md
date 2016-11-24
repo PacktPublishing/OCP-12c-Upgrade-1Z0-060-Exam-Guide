@@ -26,6 +26,10 @@ The code will look like the following:
 |     | Oracle Database 12c release 1 (12.1.0.1) | Windows 7 SP1 (recommended) or higher Mac OS X 10.10 or higher |    | 
 |     | Red hat Linux 5.3 image for virtual box | The host machine should have at least: 2.2 GHz Core i3/i5 processor or AMD equivalent. 8GB or 16GB of RAM, the higher the better. |     |
 |     |      | VirtualBox Workstation running the following Operating Systems: Redhat Linux 5.3|    |
+| 10-13 | VirtualBox 5.1.x | PC or Mac | Windows 7 /Mac OS X |
+|     | Oracle Database 11g R2 (11.2.0.3) or above | Windows 7 SP1 (recommended) or higher Mac OS X 10.10 or higher |    |
+|     | Red hat Linux 5.3 image for virtual box | The host machine should have at least:  2.2 GHz Core i3/i5 processor or AMD equivalent. 8GB or 16GB of RAM, the higher the better. |     |
+|    |    | VirtualBox Workstation running the following Operating Systems: Redhat Linux 5.3 |  |
 
 
 
