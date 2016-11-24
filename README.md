@@ -22,6 +22,11 @@ The code will look like the following:
 
 | Chapter number | Software required (With version) | Hardware specifications | OS required |
 |:--------------:|:--------------------------------:|:-----------------------:|:-----------:|
-| 1-9 | * VirtualBox 5.1.x  | * PC or Mac | * Windows 7 /Mac OS X |
+| 1-9 | VirtualBox 5.1.x  | PC or Mac | Windows 7 /Mac OS X |
+|     | Oracle Database 12c release 1 (12.1.0.1) | Windows 7 SP1 (recommended) or higher
+Mac OS X 10.10 or higher |    | 
+
+
+
 | Wyoming | 20,000 |
 | Wisconsin | 120,000 |
