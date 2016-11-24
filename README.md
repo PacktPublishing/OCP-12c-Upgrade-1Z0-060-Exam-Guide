@@ -14,6 +14,14 @@ The code will look like the following:
 
           SQL> grant C##ADMIN_ROLE to Sys container = ALL;
 
-         Grant succeeded.
+          Grant succeeded.
 
-         SQL>
+          SQL>
+          
+###Software requirements:
+
+| Chapter number | Software required (With version) | Hardware specifications | OS required |
+|:--------------:|:--------------------------------:|:-----------------------:|:-----------:|
+| 1-9 | * VirtualBox 5.1.x  | * PC or Mac | * Windows 7 /Mac OS X |
+| Wyoming | 20,000 |
+| Wisconsin | 120,000 |
