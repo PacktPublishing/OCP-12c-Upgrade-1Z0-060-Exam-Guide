@@ -1,0 +1,17 @@
+Codes and commands for Chapter 1
+================================
+
+Configuring EM Express
+
+-- dbms_xdb_config.sethttpport procedure for non-SSL connection 
+
+exec dbms_xdb_config.sethttpport(5500);
+
+-- dbms_xdb_config.sethttpsport procedure for SSL connection 
+
+exec dbms_xdb_config.sethttpsport(5500);
+
+-- Checking the XDB port
+
+select dbms_xdb_config.gethttpsport() from dual;
+

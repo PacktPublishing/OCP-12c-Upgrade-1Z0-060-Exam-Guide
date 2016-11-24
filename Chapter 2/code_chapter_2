@@ -1,0 +1,191 @@
+Codes and commands for Chapter 2
+=================================
+
+-- Root and multitenant architecture --
+---------------------------------------
+
+-- query the V$CONTAINERS view for information about all containers 
+
+select con_id, dbid, name, open_mode from v$containers;
+
+-- Creating common roles --
+---------------------------
+
+-- Connect to root container CDB$ROOT
+
+create role c##admin_role;
+
+select role, con_id from cdb_roles where role = 'C##ADMIN_ROLE';
+
+-- Granting common role commonly --
+------------------------------------
+
+-- Connect to root container CDB$ROOT
+
+grant C##ADMIN_ROLE to Sys container = ALL;
+
+-- granting common role locally --
+----------------------------------
+
+-- Connect to root container
+
+create role C##ADMIN_ROLE_2; 
+
+alter session set container = PDB1;
+
+grant C##ADMIN_ROLE_2 to sys;
+
+-- Create and configure a CDB --
+--------------------------------
+
+-- initorcl.ora
+
+sga_target=768M
+pga_aggregate_target=256M
+audit_file_dest='/u01/app/oracle/admin/orcl/adump'
+audit_trail='db'
+compatible='12.1.0.2.0'
+control_files='/u01/app/oracle/oradata/orcl/orcl/control01.ctl','/u01/app/oracle/fast_recovery_area/orcl/control02.ctl'
+db_block_size=8192
+db_domain='example.com'
+db_name='orcl'
+db_recovery_file_dest='/u01/app/oracle/fast_recovery_area'
+db_recovery_file_dest_size=4560m
+diagnostic_dest='/u01/app/oracle'
+dispatchers='(PROTOCOL=TCP) (SERVICE=orclXDB)'
+open_cursors=300
+processes=300
+remote_login_passwordfile='EXCLUSIVE'
+undo_tablespace='UNDOTBS1'
+enable_pluggable_database=true
+
+-- create spfile from pfile
+
+Create spfile from pfile;
+
+-- Create database
+
+CREATE DATABASE orcl
+USER SYS IDENTIFIED BY oracle
+USER SYSTEM IDENTIFIED by oracle
+LOGFILE GROUP 1('/u01/app/oracle/oradata/orcl/orcl/ redologs/redo-01-a.log',
+                '/u01/app/oracle/oradata/orcl/orcl/ redologs/redo-01-b.log') size 100M,
+        GROUP 2('/u01/app/oracle/oradata/orcl/orcl/ redologs/redo-02-a.log',
+                '/u01/app/oracle/oradata/orcl/orcl/ redologs/redo-02-b.log') size 100M
+CHARACTER SET utf8 NATIONAL CHARACTER SET utf8
+EXTENT MANAGEMENT LOCAL 
+DATAFILE '/u01/app/oracle/oradata/orcl/orcl/datafiles/system-01.dbf' size 1000M
+SYSAUX DATAFILE '/u01/app/oracle/oradata/orcl/orcl/datafiles/sysaux-01.dbf' size 1000M
+DEFAULT TEMPORARY TABLESPACE TEMP TEMPFILE '/u01/app/oracle/oradata/orcl/orcl/datafiles/temp-01.dbf' size 1000M
+UNDO TABLESPACE UNDOTBS1 DATAFILE '/u01/app/oracle/oradata/orcl/orcl/datafiles/undotbs1-01.dbf' size 1000M
+ENABLE PLUGGABLE DATABASE
+SEED FILE_NAME_CONVERT = ('/u01/app/oracle/oradata/orcl/orcl/datafiles/','/u01/app/oracle/oradata/orcl/seed/datafiles/')
+/
+
+-- Create database using OMF
+
+CREATE DATABASE orcl
+USER SYS IDENTIFIED BY oracle
+USER SYSTEM IDENTIFIED by oracle
+DEFAULT TEMPORARY TABLESPACE TEMP
+UNDO TABLESPACE UNDOTBS1
+ENABLE PLUGGABLE DATABASE
+/
+
+
+-- listener.ora configuration
+
+LISTENER =
+  (DESCRIPTION_LIST =
+    (DESCRIPTION =
+      (ADDRESS = (PROTOCOL = TCP)(HOST = deo.example.com)(PORT = 1521))
+      (ADDRESS = (PROTOCOL = IPC)(KEY = EXTPROC1521))
+    )
+  )
+
+
+-- tnsnames.ora configuration
+
+ORCL =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = deo.example.com)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = orcl.example.com)
+    )
+  )
+
+
+ -- Creating PDB
+
+ Create pluggable database pdb1 admin user pdb1_admin identified by oracle file_name_convert=('/u01/app/oracle/oradata/orcl/seed/datafiles','/u01/app/oracle/oradata/orcl/pdb1/datafiles');
+
+-- check the details of the new PDB in the V$CONTAINERS view
+
+select con_id, GUID, name, open_mode from v$containers;
+
+-- Cloning a PDB from an existing PDB --
+----------------------------------------
+
+-- First close the PDB
+
+alter pluggable database pdb1 close;
+
+-- open the PDB in read only
+
+alter pluggable database pdb1 open read only;
+
+-- Create a new PDB from existing PDB
+
+create pluggable database pdb2 from pdb1 file_name_convert=('/u01/app/oracle/oradata/orcl/pdb1/datafiles','/u01/app/oracle/oradata/orcl/pdb2/datafiles');
+
+-- open the PDB
+
+alter pluggable database pdb2 open;
+
+-- current status of the PDB
+
+select con_id, name, open_mode from v$containers;
+
+-- Unplugging PDB2 from ORCL --
+-------------------------------
+
+-- Close a PDB
+
+alter pluggable database pdb2 close immediate;
+
+-- Unplug the PDB
+
+alter pluggable database pdb2 unplug into ‘/home/oracle/pdb2.xml’;
+
+-- Plugging PDB2 into a CDB --
+-------------------------------
+
+-- Check compatibility of PDB
+
+compatible:
+SET SERVEROUTPUT ON
+DECLARE
+  l_result BOOLEAN;
+BEGIN
+  l_result := DBMS_PDB.check_plug_compatibility(
+                pdb_descr_file => '/u01/app/oracle/pdb2.xml',
+                pdb_name       => 'pdb2');
+
+  IF l_result THEN
+    DBMS_OUTPUT.PUT_LINE('PDB is Compatible');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('PDB is InCompatible');
+  END IF;
+END;
+/
+
+-- Create pluggable database using unplugged PDB's XML file
+
+create pluggable database pdb2 using '/u01/app/oracle/pdb2.xml' nocopy;
+
+-- open PDB
+
+alter pluggable database pdb2 open;
+
+

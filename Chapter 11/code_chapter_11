@@ -1,0 +1,345 @@
+Codes and commands for Chapter 11
+=================================
+
+-- Using bind variables --
+--------------------------
+
+CREATE TABLE T1 (col1 VARCHAR2(30), col2 VARCHAR2(30));
+
+INSERT INTO T1 (col1,col2) VALUES ( ''' || REPLACE (col1, '''', '''''') || ''',
+                                    '''  || REPLACE (col2, '''', '''''') || ''');
+
+INSERT INTO T1 (col1,col2) VALUES (:b1, :b2);
+
+
+-- Using database resource manager --
+-------------------------------------
+
+Step 1) Create pending area for plan, consumer group and directives
+
+BEGIN 
+ DBMS_RESOURCE_MANAGER.CREATE_PENDING_AREA(); 
+END; 
+/
+
+PL/SQL procedure successfully completed.
+
+Step 2) Create resource plans
+
+BEGIN 
+ DBMS_RESOURCE_MANAGER.CREATE_PLAN( PLAN => 'MY_RSRC_PLAN', COMMENT => 'resource plan for my database'); 
+END; 
+/ 
+
+PL/SQL procedure successfully completed.
+
+Step 3) Create resource consumer groups
+
+BEGIN 
+ DBMS_RESOURCE_MANAGER.CREATE_CONSUMER_GROUP( CONSUMER_GROUP => 'USER_GROUP',
+  COMMENT => 'resource consumer group for users sessions'); 
+ DBMS_RESOURCE_MANAGER.CREATE_CONSUMER_GROUP( 
+  CONSUMER_GROUP => 'BATCH_JOB_GROUP', 
+  COMMENT => 'resource consumer group for running batch jobs'); 
+ DBMS_RESOURCE_MANAGER.CREATE_CONSUMER_GROUP( 
+  CONSUMER_GROUP => 'MAINTENANCE_GROUP', 
+  COMMENT => 'resource consumer group for maintenance tasks in database'); 
+END; 
+/ 
+
+PL/SQL procedure successfully completed.
+
+Step 4) Create resource plan directives
+
+BEGIN 
+ DBMS_RESOURCE_MANAGER.CREATE_PLAN_DIRECTIVE( 
+   PLAN => 'MY_RSRC_PLAN', 
+   GROUP_OR_SUBPLAN => 'USER_GROUP', 
+   COMMENT => 'user sessions in database', 
+   CPU_P1 => 60, 
+   PARALLEL_DEGREE_LIMIT_P1 => 0); 
+ DBMS_RESOURCE_MANAGER.CREATE_PLAN_DIRECTIVE( 
+   PLAN => 'MY_RSRC_PLAN', 
+   GROUP_OR_SUBPLAN => 'BATCH_JOB_GROUP', 
+   COMMENT => 'batch jobs in database', 
+   CPU_P1 => 20, 
+   PARALLEL_DEGREE_LIMIT_P1 => 8); 
+ DBMS_RESOURCE_MANAGER.CREATE_PLAN_DIRECTIVE( 
+   PLAN => 'MY_RSRC_PLAN', 
+   GROUP_OR_SUBPLAN => 'MAINTENANCE_GROUP', 
+   COMMENT => 'maintenance tasks in database', 
+   CPU_P1 => 20, 
+   PARALLEL_DEGREE_LIMIT_P1 => 2);
+DBMS_RESOURCE_MANAGER.CREATE_PLAN_DIRECTIVE( 
+   PLAN => 'MY_RSRC_PLAN', 
+   GROUP_OR_SUBPLAN => 'OTHER_GROUPS', 
+   COMMENT => 'other_groups is mandatory', 
+   CPU_P1 => 0, 
+   PARALLEL_DEGREE_LIMIT_P1 => 0); 
+END; 
+/ 
+
+PL/SQL procedure successfully completed.
+
+Step 5) Validate Pending area for plan
+
+BEGIN 
+ DBMS_RESOURCE_MANAGER.VALIDATE_PENDING_AREA(); 
+END; 
+/ 
+
+PL/SQL procedure successfully completed.
+
+
+Step 6) submit pending area for plan
+
+BEGIN 
+ DBMS_RESOURCE_MANAGER.SUBMIT_PENDING_AREA(); 
+END; 
+/
+
+PL/SQL procedure successfully completed.
+
+Step 7) Assign users to resource consumer groups
+
+For assigning the user to the resoruce consumer group, we need to again create a pending area
+
+BEGIN 
+ DBMS_RESOURCE_MANAGER.CREATE_PENDING_AREA(); 
+END; 
+/ 
+
+PL/SQL procedure successfully completed.
+
+Step 8) Grant permissions to user to switch to the respective consumer groups
+
+We are assuming here that we have test_user1, test_user2 and test_user3 created in the database
+
+BEGIN 
+ DBMS_RESOURCE_MANAGER_PRIVS.GRANT_SWITCH_CONSUMER_GROUP( 
+   GRANTEE_NAME => 'TEST_USER1', 
+   CONSUMER_GROUP => 'USER_GROUP', 
+   GRANT_OPTION => FALSE); 
+ DBMS_RESOURCE_MANAGER_PRIVS.GRANT_SWITCH_CONSUMER_GROUP( 
+   GRANTEE_NAME => 'TEST_USER2', 
+   CONSUMER_GROUP => 'BATCH_JOB_GROUP', 
+   GRANT_OPTION => FALSE); 
+ DBMS_RESOURCE_MANAGER_PRIVS.GRANT_SWITCH_CONSUMER_GROUP( 
+   GRANTEE_NAME => 'TEST_USER3', 
+   CONSUMER_GROUP => 'MAINTENANCE_GROUP', 
+   GRANT_OPTION => FALSE); 
+END; 
+/ 
+
+PL/SQL procedure successfully completed.
+
+Step 9) Assign consumer groups to the respective users
+
+BEGIN 
+ DBMS_RESOURCE_MANAGER.SET_INITIAL_CONSUMER_GROUP( 
+  USER => 'TEST_USER1', 
+  CONSUMER_GROUP => 'USER_GROUP'); 
+ DBMS_RESOURCE_MANAGER.SET_INITIAL_CONSUMER_GROUP( 
+  USER => 'TEST_USER2', 
+  CONSUMER_GROUP => 'BATCH_JOB_GROUP'); 
+ DBMS_RESOURCE_MANAGER.SET_INITIAL_CONSUMER_GROUP( 
+  USER => 'TEST_USER3', 
+  CONSUMER_GROUP => 'MAINTENANCE_GROUP'); 
+END; 
+/ 
+
+PL/SQL procedure successfully completed.
+
+Step 10) validate pending area
+
+BEGIN 
+ DBMS_RESOURCE_MANAGER.VALIDATE_PENDING_AREA(); 
+END; 
+/ 
+
+PL/SQL procedure successfully completed.
+
+Step 11) Submit pending area
+
+BEGIN 
+ DBMS_RESOURCE_MANAGER.SUBMIT_PENDING_AREA(); 
+END; 
+/ 
+
+PL/SQL procedure successfully completed.
+
+Step 12) Enable resource manager plan to be used by the database instance
+
+ALTER SYSTEM SET RESOURCE_MANAGER_PLAN = MY_RSRC_PLAN; 
+
+
+
+-- Proactive database monitoring --
+-----------------------------------
+
+-- Creating server alerts
+
+DBMS_SERVER_ALERT.SET_THRESHOLD(
+DBMS_SERVER_ALERT.CPU_TIME_PER_CALL,   
+DBMS_SERVER_ALERT.OPERATOR_GE, '8000', 
+DBMS_SERVER_ALERT.OPERATOR_GE, '10000', 1, 2, 'deo',
+DBMS_SERVER_ALERT.OBJECT_TYPE_SERVICE, 'deo.example.com');
+
+
+-- Running ADDM report
+
+$ORACLE_HOME/rdbms/admin/addmrpt.sql
+
+-- Running AWR compare report
+
+@$ORACLE_HOME/rdbms/admin/awrddrpt.sql
+
+-- Using advisors to optimize database performance --
+-----------------------------------------------------
+
+-- Disabling auto task client
+
+BEGIN
+  DBMS_AUTO_TASK_ADMIN.DISABLE(
+    client_name => 'sql tuning advisor', 
+    operation => NULL, 
+    window_name => NULL);
+END;
+/
+
+
+-- Running SQL Tuning advisor
+
+--- Step 1) Create a SQL tuning task
+
+DECLARE
+ l_task_name VARCHAR2(30);
+BEGIN
+l_task_name := DBMS_SQLTUNE.CREATE_TUNING_TASK(
+         sql_id             => 'a198gyhatw1kg',
+         PLAN_HASH_VALUE    => 506401577,
+         scope              => 'COMPREHENSIVE',
+         time_limit         => 60,
+         task_name          => 'my_sql_tuning_task',
+         description        => 'My SQL tuning task');
+END;
+/
+
+
+-- Step 2) Modify the SQL tuning task parameters as required
+
+BEGIN
+  DBMS_SQLTUNE.SET_TUNING_TASK_PARAMETER(
+    task_name => 'my_sql_tuning_task',
+    parameter => 'TIME_LIMIT', value => 300);
+END;
+/
+
+-- Step 3) Execute the SQL tuning task
+
+
+BEGIN
+  DBMS_SQLTUNE.EXECUTE_TUNING_TASK( task_name => 'my_sql_tuning_task' );
+END;
+/
+
+-- Step 4) View the results of SQL tuning set
+
+SET LONG 1000
+SET LONGCHUNKSIZE 1000
+SET LINESIZE 100
+SELECT DBMS_SQLTUNE.REPORT_TUNING_TASK( 'my_sql_tuning_task') FROM DUAL;
+
+
+-- Automatic Workload Repository --
+-----------------------------------
+
+-- Generating AWR report
+
+$ORACLE_HOME/rdbms/admin/awrrpt.sql 
+
+-- Tracing --
+-------------
+
+-- The CLIENT_ID_TRACE_ENABLE procedure enables tracing globally for the database of a given client identifier. For example
+
+EXECUTE DBMS_MONITOR.CLIENT_ID_TRACE_ENABLE(client_id => 'OE.OE', waits => TRUE, binds => FALSE);
+
+-- The CLIENT_ID_TRACE_DISABLE procedure disables tracing globally for the database of a given client identifier
+
+EXECUTE DBMS_MONITOR.CLIENT_ID_TRACE_DISABLE(client_id => 'OE.OE');
+
+-- The SERV_MOD_ACT_TRACE_ENABLE procedure enables global SQL tracing for a given combination of service name, module, and action for a database, unless an instance name is specified in the procedure
+
+EXECUTE DBMS_MONITOR.SERV_MOD_ACT_TRACE_ENABLE(service_name => 'ACCTG', waits => TRUE, binds => FALSE, instance_name => 'inst1');
+
+-- To enable tracing for all actions for a given combination of service and module, do the following
+
+EXECUTE DBMS_MONITOR.SERV_MOD_ACT_TRACE_ENABLE(service_name => 'ACCTG’, module_name => 'PAYROLL’, waits => TRUE,  binds => FALSE, instance_name => 'inst1’);
+
+-- The following disables tracing for the first example in this section
+
+EXECUTE DBMS_MONITOR.SERV_MOD_ACT_TRACE_DISABLE(service_name => 'ACCTG’,instance_name => 'inst1’);
+
+-- This example disables tracing for the second example in this section
+
+EXECUTE DBMS_MONITOR.SERV_MOD_ACT_TRACE_DISABLE(service_name => 'ACCTG’, module_name => 'PAYROLL’, instance_name => 'inst1’);
+
+-- The SESSION_TRACE_ENABLE procedure enables the trace for a given database session identifier (SID) on the local instance
+
+EXECUTE DBMS_MONITOR.SESSION_TRACE_ENABLE(session_id => 27, serial_num => 60, waits => TRUE, binds => FALSE);
+
+-- The SESSION_TRACE_DISABLE procedure disables the trace for a given database session identifier (SID) and serial number
+
+EXECUTE DBMS_MONITOR.SESSION_TRACE_DISABLE(session_id => 27, serial_num => 60);
+
+-- The DATABASE_TRACE_ENABLE procedure enables SQL tracing for a given instance or an entire database
+
+EXECUTE DBMS_MONITOR.DATABASE_TRACE_ENABLE (waits => TRUE, binds => FALSE, instance_name => 'inst1’);
+
+-- The DATABASE_TRACE_DISABLE procedure disables the tracing for an entire instance or database
+
+EXECUTE DBMS_MONITOR.DATABASE_TRACE_DISABLE(instance_name => 'inst1’);
+
+-- Using trcsess
+
+trcsess session=2324.68784 output=session_2324.trc
+
+-- Using tkprof
+
+tkprof session_2324.trc session_2324.txt
+
+-- Running the SQL performance analyzer --
+------------------------------------------
+
+-- Creating a SQL performance analyzer task
+
+VARIABLE t_name VARCHAR2(100);
+EXEC :t_name := DBMS_SQLPA.CREATE_ANALYSIS_TASK(sqlset_name => 'before_change’, task_name => 'my_spa_task’);
+
+-- Building the pre-upgrade SQL trial:
+
+EXEC DBMS_SQLPA.EXECUTE_ANALYSIS_TASK(task_name => 'my_spa_task’, execution_type => 'CONVERT SQLSET’, execution_name => 'before_change’);
+
+-- Building the post-upgrade SQL trial
+
+EXEC DBMS_SQLPA.EXECUTE_ANALYSIS_TASK(task_name => 'my_spa_task’, execution_type => 'CONVERT SQLSET’, execution_name => 'after_change’);
+
+-- To compare the pre-change and post-change SQL performance data, you can use the EXECUTE_ANALYSIS_TASK procedure, as shown in the following example
+
+EXEC DBMS_SQLPA.EXECUTE_ANALYSIS_TASK(task_name => 'my_spa_task’, - 
+       execution_type => 'COMPARE PERFORMANCE’, -
+       execution_name => 'my_exec_compare’, -
+       execution_params => dbms_advisor.arglist(-
+                           'comparison_metric’, 'buffer_gets’,
+                           'execution_name1’, 'before_change’,
+                           'execution_name2’, 'after_change’))
+
+-- You can call the DBMS_SQLPA.REPORT_ANALYSIS_TASK function to generate a report as shown in the following example
+
+VAR rep   CLOB;
+EXEC :rep := DBMS_SQLPA.REPORT_ANALYSIS_TASK('my_spa_task’, -
+                'text’, 'typical’, 'summary’, NULL, 100, 'my_exec_compare’);
+SET LONG 100000 LONGCHUNKSIZE 100000 LINESIZE 130
+PRINT :rep
+

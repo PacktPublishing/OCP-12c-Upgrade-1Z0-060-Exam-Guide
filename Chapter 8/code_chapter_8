@@ -1,0 +1,242 @@
+Codes and commands for Chapter 8
+=================================
+
+-- Creating and enabling a CDB resource plan --
+-----------------------------------------------
+
+-- Create a pending area
+
+exec dbms_resource_manager.create_pending_area();
+
+-- Create a CDB resource plan
+
+BEGIN
+dbms_resource_manager.create_cdb_plan(
+plan 	=> 'example_plan',
+comment 	=> 'This is an example plan for ORCL CDB'
+);
+END;
+/
+
+-- Create a CDB resource plan directive for each PDB
+
+-- For PDB1
+
+BEGIN
+dbms_resource_manager.create_cdb_plan_directive(
+plan                    => 'example_plan',
+pluggable_database      => 'pdb1',
+shares                  => 1,
+utilization_limit       => 50,
+parallel_server_limit   => 50);
+END;
+/
+
+
+-- For PDB2
+
+BEGIN
+ dbms_resource_manager.create_cdb_plan_directive(
+ plan                    => 'example_plan',
+ pluggable_database      => 'pdb2',
+ shares                  => 1,
+ utilization_limit       => 50,
+ parallel_server_limit   => 50);
+ END;
+ /
+
+
+-- For PDB3
+
+BEGIN
+dbms_resource_manager.create_cdb_plan_directive(
+plan                    => 'example_plan',
+pluggable_database      => 'pdb3',
+shares                  => 2,
+utilization_limit       => NULL,
+parallel_server_limit   => NULL);
+END;
+/
+
+
+-- Validate the pending area
+
+exec dbms_resource_manager.validate_pending_area();
+
+-- Submit pending area
+
+exec dbms_resource_manager.submit_pending_area();
+
+-- You can enable the new resource manager plan by setting the resource_manager_plan parameter, as shown in the following code
+
+alter system set resource_manager_plan = 'example_plan';
+
+-- If you want to disable the resource manager plan, you can set the preceding parameter to null string, as shown in the following code
+
+alter system set resource_manager_plan = '';
+
+-- Viewing CDB resource plan directives --
+------------------------------------------
+
+-- You can view various resource manager plans created in the database in this view. Each line corresponds to the plan that you have created
+
+select plan, comments, mandatory from DBA_CDB_RSRC_PLANS;
+
+-- You can check various directives assigned to a plan using this view. For example, if you want to see the directives related to example_plan that we created previously, we can use the following SQL
+
+select plan, PLUGGABLE_DATABASE, SHARES, UTILIZATION_LIMIT, PARALLEL_SERVER_LIMIT from DBA_CDB_RSRC_PLAN_DIRECTIVES where plan = 'EXAMPLE_PLAN';
+
+
+-- Managing CDB resource plans --
+---------------------------------
+
+-- you can use UPDATE_CDB_DEFAULT_DIRECTIVE to update attributes of  the default directive
+
+BEGIN
+ dbms_resource_manager.update_cdb_default_directive(
+ plan                            => 'example_plan',
+ new_shares                      => 1,
+ new_utilization_limit           => 50,
+ new_parallel_server_limit       => 50);
+ END;
+ /
+
+-- Enabling multi-threaded architecture --
+-------------------------------------------
+
+
+alter system set threaded_execution = true scope = spfile;
+
+shut immediate
+
+startup
+
+-- We can only see the following background process
+
+ps -eaf | grep ora_
+
+-- We can check all background threads using the following command at the Unix shell
+
+ps -L -eo "pid tid comm args" | grep ora_
+
+-- You can see similar information from the V$PROCESS view. Columns SPID and STID show the relationship between the process ID and thread ID, as follows
+
+select spid, stid, program from v$process order by 1,2;
+
+-- Usage and limitations of invisible columns --
+-------------------------------------------------
+
+-- Creating a table with invisible columns
+
+create table T1 (col1 number, col2 varchar2(10) invisible);
+
+desc T1
+
+set colinvisible on 
+
+desc T1
+
+-- If you try inserting invisible columns into the table without explicitly specifying the column name, you will get error
+
+insert into T1 values (1, 'A');
+
+insert into T1 (col1, col2) values (1, 'A');
+
+-- If we use SELECT *, it will show only one column
+
+select * from T1;
+
+select col1, col2 from T1;
+
+-- You can make an invisible column visible and vice-versa using the ALTER TABLE statement, as shown in the following code
+
+alter table T1 modify (col2 visible);
+
+desc T1 
+
+-- Multiple indexes on the same columns --
+------------------------------------------
+
+-- Create a unique and non-unique index on the same column of table T1
+
+create table T1 as select * from order_items;
+
+create unique index T1_UK on T1(ORDER_ID, PRODUCT_ID) tablespace users;
+
+create index T1_NON_UK on T1(ORDER_ID, PRODUCT_ID) tablespace users invisible;
+
+-- Online redefinition – tables with VPD --
+-------------------------------------------
+
+exec dbms_redefinition.start_redef_table(
+UNAME           => 'OE',
+ORIG_TABLE      => 'ORDER_ITEMS',
+INT_TABLE       => 'ORDER_ITEMS_INTRIM',
+OPTION_FLAG     => dbms_redefinition.cons_use_pk,
+COPY_VPD_OPT    => dbms_redefinition.cons_vpd_auto);
+/
+
+-- Online redefinition – dml_lock_timeout --
+--------------------------------------------
+
+exec dbms_redefinition.finish_redef_table(
+UNAME          	=> 'OE',
+ORIG_TABLE      	=> 'ORDER_ITEMS',
+INT_TABLE       	=> 'ORDER_ITEMS_INTRIM',
+DML_LOCK_TIMEOUT	=> 100);
+/
+
+-- Using compression advisor --
+--------------------------------
+
+DECLARE
+ blkcnt_cmp      integer;
+ blkcnt_uncmp    integer;
+ row_cmp         integer;
+ row_uncmp       integer;
+ cmp_ratio       integer;
+ comptype_str    varchar2(100);
+ BEGIN
+ dbms_compression.get_compression_ratio(
+ SCRATCHTBSNAME  => 'USERS',
+ OWNNAME         => 'OE',
+ OBJNAME         => 'ORDER_ITEMS',
+ SUBOBJNAME      => null,
+ COMPTYPE        => dbms_compression.comp_advanced,
+ BLKCNT_CMP      => blkcnt_cmp,
+ BLKCNT_UNCMP    => blkcnt_uncmp,
+ ROW_CMP         => row_cmp,
+ ROW_UNCMP       => row_uncmp,
+ CMP_RATIO       => cmp_ratio,
+ COMPTYPE_STR    => comptype_str,
+ SUBSET_NUMROWS  => 1000,
+ OBJTYPE         => 1);
+ dbms_output.put_line('Block count compressed = '||blkcnt_cmp);
+ dbms_output.put_line('Block count uncompressed = '||blkcnt_uncmp);
+ dbms_output.put_line('Compression type = '||comptype_str);
+ dbms_output.put_line('Compression ratio = '||cmp_ratio);
+ END;
+ /
+
+-- Drop index/constraints --
+-----------------------------
+
+-- Drop constraints online has the following restrictions:
+---- Cannot drop constraints with CASCADE
+---- Cannot drop referencing constraints that holds references for other dependencies
+
+drop index oe.ORDER_ITEMS_UK online;
+
+alter table order_items drop constraint ORDER_ITEMS_ORDER_ID_FK online;
+
+
+-- Index unusable
+
+alter index oe.ITEM_ORDER_IX unusable online;
+
+-- DDL logging
+
+alter system set enable_ddl_logging = true;
+
+alter index oe.ITEM_ORDER_IX rebuild online;
+

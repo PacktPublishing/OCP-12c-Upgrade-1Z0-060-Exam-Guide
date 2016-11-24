@@ -1,0 +1,214 @@
+Codes and commands for Chapter 3
+=================================
+
+-- Services --
+--------------
+
+-- check the details of service names --
+
+select service_id, name, PDB from v$services;
+
+-- Check the details of PDBs
+
+SELECT CON_ID, NAME, OPEN_MODE from v$pdbs;
+
+-- Checking listener status
+
+lsnrctl status
+
+-- Creating Service using srvctl
+
+srvctl add service –db pdb1 –service dss_service –pdb pdb1
+
+-- Creating service using DBMS_SERVICE package
+
+EXEC DBMS_SERVICE.CREATE_SERVICE('oltp_service','oltp_service') 
+
+-- Starting the service
+
+EXEC DBMS_SERVICE.START_SERVICE('oltp_service')
+
+-- Using easy connect to connect to database
+
+connect sys\@localhost:1522\/deo.example.com as sysdba
+
+-- Switching the container
+
+alter session set container=CDB$ROOT;
+
+-- Managing CDB and PDB --
+--------------------------
+
+-- opening the PDB
+
+alter pluggable database pdb1 open;     
+alter pluggable database pdb1 open read write;     
+
+-- opening all PDBs
+
+alter pluggable database all open;     
+
+-- opening in read only
+
+alter pluggable database pdb1 open read only;     
+
+-- Closing PDB
+
+alter pluggable database pdb1 close immediate;
+
+-- Changing instance parameters for a CDB/PDB --
+------------------------------------------------
+
+-- Checking instance parameter value
+
+select name, value, ispdb_modifiable from v$parameter where name  = 'resumable_timeout';
+
+alter system set resumable_timeout=20;
+
+-- Connect to different container in same instance
+
+connect sys@PDB2_2 as sysdba
+
+alter system set resumable_timeout=40;
+
+-- Check parameter value in all containers
+
+select name, value, ispdb_modifiable, con_id from v$system_parameter where name  = 'resumable_timeout';
+
+-- Modifying PDB settings --
+----------------------------
+
+-- Taking datafile offline
+
+alter pluggable database datafile '/u01/app/oracle/oradata/deo/pdb1/datafiles/users01.dbf' offline;
+
+-- Changing storage parameter
+
+alter pluggable database pdb1 storage(maxsize 10G);
+
+-- Changing global name
+
+alter pluggable database rename global_name to pdb_test;
+
+-- Enabling a common user to access data in a specific PDB --
+--------------------------------------------------------------
+
+-- Create common user
+
+create user c##deo identified by oracle;
+
+-- Grant privilege
+
+grant select on cdb_users to c##deo container = ALL;
+
+-- enable this user to view data of all the containers when he is connected to the root container
+
+alter user c##deo set container_data=(CDB$ROOT,PDB1) for cdb_users container = current;
+
+-- enable the common user to view data in PDB2 using the following alter user statement
+
+alter user c##deo set container_data=(CDB$ROOT,PDB1,PDB2) for cdb_users container = current;
+
+
+-- Default tablespaces for containers --
+----------------------------------------
+
+-- Default permanent tablespace
+
+alter pluggable database pdb1 default tablespace users;
+
+-- default temporary tablespace
+
+alter pluggable database pdb1 default temporary tablespace temp;
+
+-- view the default tablespace properties 
+
+select property_name, property_value from database_properties  where property_name like '%DEFAULT%TABLE%';
+
+-- UNDO tablespace at the CDB level
+
+select tablespace_name, con_id from cdb_tablespaces where tablespace_name like '%UNDO%';
+
+-- Checking temporary tablespace in the PDBs apart from the root
+
+select tablespace_name, con_id from cdb_tablespaces where tablespace_name like '%TEMP%';
+
+-- dba_datafiles shows the data files of the root container and cdb_datafiles shows the data files of all the PDBs and SEED
+
+select file_name from dba_data_files;
+select file_name, con_id from cdb_data_files;
+
+-- Permanent tablespaces in CDB and PDB --
+------------------------------------------
+
+-- Create a permanent tablespace in the root container
+
+create tablespace CDB_users datafile '/u01/app/oracle/oradata/deo/deo/datafiles/cdb_users01.dbf' size 100M;
+
+-- Create a temporary tablespace in the root container
+
+create temporary tablespace CDB_temp tempfile '/u01/app/oracle/oradata/deo/deo/datafiles/CDB_temp01.dbf' size 100M;
+
+-- Local users and common users --
+----------------------------------
+
+-- Creating local user
+
+create user advait_local identified by oracle;
+
+-- Creating common user
+
+create user c##deo identified by oracle CONTAINER = ALL;
+
+-- Viewing local and common users --
+------------------------------------
+
+select username, common, con_id from cdb_users order by 2;    
+
+select username, con_id from cdb_users where username = 'C##_U01';
+
+
+-- Managing privilege --
+-------------------------------------------
+
+-- granting privilge
+
+grant create session to c##u01 container = all;
+
+-- Checking privilege
+
+select grantee, privilege, common, con_id from cdb_sys_privs where grantee = 'C##U01';
+
+
+-- Revoking privileges
+
+alter session set container = cdb$root;
+revoke create session from c##u01 container = ALL;
+
+-- Creating common roles
+
+create role c##_r01 container=all;
+
+-- Creating local roles
+
+create role l_r01 container=current;
+
+-- grant a common role to a common user locally in the root
+
+grant c##_r01 to c##_u01;
+select grantee, granted_role, common, con_id from  cdb_role_privs where grantee='C##_U01';
+
+-- grant a common role to a common user commonly across all containers
+
+grant c##_r01 to c##_u01 container=all;
+select grantee, granted_role, common, con_id from  cdb_role_privs where grantee='C##_U01';
+
+-- Revoking roles
+
+-- Revoke a common role from a common user in the root
+
+revoke C##_R01 from C##_U01 container=current;
+
+-- Revoke a common role from a common user from the root container across all the containers
+
+revoke C##_R01 from C##_U01 container=all;

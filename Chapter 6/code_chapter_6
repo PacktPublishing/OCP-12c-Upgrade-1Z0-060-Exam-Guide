@@ -1,0 +1,228 @@
+Codes and commands for Chapter 6
+================================
+
+-- Enabling monitoring of database operations --
+------------------------------------------------
+
+var dbop_eid number;
+exec :dbop_eid := dbms_sql_monitor.begin_operation('ORA.DEMO_USER.SELECT1’,forced_tracking=>'Y');
+
+select * from demo_user.sales where year = 2001;
+
+insert into demo_user.accounts select * from demo_user.accounts;
+
+select * from demo_user.products where year = 2001;
+
+select * from demo_user.sales;
+
+exec dbms_sql_monitor.end_operation('ORA.MV.REFRESH',:dbop_eid);
+
+-- Monitoring operations using views
+
+select dbop_name, dbop_exec_id, status from v$sql_monitor where dbop_name is not null;
+
+select sample_time,  session_id, dbop_name, dbop_exec_id from v$active_session_history where dbop_name is not null order by 1;
+
+-- Adaptive execution plans and join methods --
+-----------------------------------------------
+
+Select sql_id from v$sql where is_resolved_adaptive_plan = ‘Y’;
+
+SELECT * FROM TABLE(DBMS_XPLAN.display_cursor(sql_id=>'dhpn35zupm8ck',cursor_child_no=>0;
+
+SELECT * FROM TABLE(DBMS_XPLAN.display_cursor(sql_id=>'dhpn35zupm8ck',cursor_child_no=>0,format=>'adaptive'));
+
+-- Automatic re-optimization --
+-------------------------------
+
+-- changing the statistics of the tables and indexes to some false values 
+
+--- For Tables
+
+exec DBMS_STATS.SET_TABLE_STATS(OWNNAME => 'OE',TABNAME=>'ORDERS',NUMROWS=>10000,NUMBLKS=>10000);
+exec DBMS_STATS.SET_TABLE_STATS(OWNNAME => 'OE',TABNAME=>'ORDER_ITEMS',NUMROWS=>100,NUMBLKS=>10);
+exec DBMS_STATS.SET_TABLE_STATS(OWNNAME => 'OE',TABNAME=>'INVENTORIES',NUMROWS=>5,NUMBLKS=>1);
+exec DBMS_STATS.SET_TABLE_STATS(OWNNAME => 'OE',TABNAME=>'PRODUCT_INFORMATION',NUMROWS=>40,NUMBLKS=>2);
+
+-- For Indexes
+
+exec DBMS_STATS.SET_INDEX_STATS(OWNNAME => 'OE',INDNAME=>'ORDER_PK',NUMROWS=>10,NUMLBLKS=>10);
+exec DBMS_STATS.SET_INDEX_STATS(OWNNAME => 'OE',INDNAME=>'ORD_CUSTOMER_IX',NUMROWS=>100,NUMLBLKS=>10);
+
+select * from table(dbms_xplan.display_cursor('&SQL_ID',0,format=>'ALLSTATS LAST'));
+
+-- From v$sql, we can check whether this query is re-optimizable or not
+
+select sql_id, is_reoptimizable from v$sql where sql_id = 'gc0sy3nccmkmm';
+
+-- We need to check the plan for CHILD_NUMBER = 1
+
+select * from table(dbms_xplan.display_cursor('&SQL_ID',1,format=>'ALLSTATS LAST'));
+
+-- SQL plan directives --
+-------------------------
+
+-- submit the following SQL against order_items and product_information:
+
+select  /*+ gather_plan_statistics */ oi.order_id, p.product_name
+from    order_items oi, product_information p
+where   p.product_id = oi.product_id
+and     list_price < 20
+and     min_price < 10
+
+-- use the following select statement with dbms_xplan.display_cursor
+
+select * from table(dbms_xplan.display_cursor('&SQL_ID',0,format=>'ALLSTATS LAST'));
+
+-- let’s see if the optimizer has marked this query as re-optimizable
+
+select sql_id, child_number, is_reoptimizable from v$sql where sql_id = '9trfmyxfy697a';
+
+-- check if we have any SQL plan directive stored for predicates used in this query
+
+select a.directive_id, b.object_name, b.subobject_name, b.object_type, a.REASON from dba_sql_plan_dir_objects b, dba_sql_plan_directives a where a.directive_id = b.directive_id and b.owner = 'OE' and object_name = 'PRODUCT_INFORMATION' ; 
+
+-- You can manually flush the directives created to disk using the following procedure
+
+exec dbms_spd.flush_sql_plan_directive;
+
+-- As you can see in the following code, the query created another child cursor as it went for hard parsing
+
+select sql_id, child_number, is_reoptimizable from v$sql where sql_id = 'gc0sy3nccmkmm';
+
+-- Enabling concurrent statistics collection --
+-----------------------------------------------
+
+-- Set job_queue_processes to at least 4
+
+alter system set job_queue_processes=16;
+
+-- Enable the resource manager in the database
+
+alter system set RESOURCE_MANAGER_PLAN = 'DEFAULT_PLAN';
+
+-- Use the DBMS_STATS.SET_GLOBAL_PREFS procedure to enable concurrent statistics collection
+
+exec dbms_stats.set_global_prefs('CONCURRENT','ALL');
+
+-- You can also disable the concurrent stats gathering by setting CONCURRENT parameter to OFF, as shown in the following
+
+exec dbms_stats.set_global_prefs('CONCURRENT','OFF');
+
+-- Parallel execution of stats gathering --
+-------------------------------------------
+
+-- following script illustrates one way of creating a temporary resource plan (parallel_stats_gather), and enabling the resource manager with this plan
+
+begin
+  dbms_resource_manager.create_pending_area();
+  dbms_resource_manager.create_plan('parallel_stats_gather', 'parallel_stats_gather');
+  dbms_resource_manager.create_plan_directive(
+        ' parallel_stats_gather ',
+        'OTHER_GROUPS',
+        'OTHER_GROUPS directive for parallel stats gather',
+        parallel_target_percentage => 75,
+        max_utilization_limit => 90);
+  dbms_resource_manager.submit_pending_area();
+end;
+/
+ALTER SYSTEM SET RESOURCE_MANAGER_PLAN = 'parallel_stats_gather';
+
+
+-- Statistics gathering for a global temporary table --
+-------------------------------------------------------
+
+-- check out the default value for GLOBAL_TEMP_TABLE_STATS
+
+select dbms_stats.GET_PREFS('GLOBAL_TEMP_TABLE_STATS') from dual;
+
+-- following example shows you how to enable SHARED stats at the database level
+
+exec dbms_stats.set_global_prefs('GLOBAL_TEMP_TABLE_STATS','SHARED');
+
+select dbms_stats.GET_PREFS('GLOBAL_TEMP_TABLE_STATS') from dual;
+
+-- We can also enable SHARED stats or private SESSION stats for individual global temporary tables using the DBMS_STATS.SET_TABLE_PREFS procedure
+
+exec dbms_stats.set_table_prefs('SYS','T1','GLOBAL_TEMP_TABLE_STATS','SESSION');
+
+select dbms_stats.get_prefs('GLOBAL_TEMP_TABLE_STATS','SYS','T1') from dual;
+
+-- Setting GLOBAL_TEMP_TABLE_STATS to SHARED as sys user
+
+exec dbms_stats.set_global_prefs('GLOBAL_TEMP_TABLE_STATS','SHARED');
+
+-- create a GTT, insert some data and gather stats. This will be shared stats available to all the sessions.
+
+create global temporary table T1 (col1 number, col2 varchar2(10)) on commit preserve rows;
+
+exec dbms_stats.gather_table_stats(user,'T1');
+
+select table_name, num_rows, scope from user_tab_statistics where table_name = 'T1';
+
+-- select table_name, num_rows, scope from user_tab_statistics where table_name = 'T1';
+
+exec dbms_stats.set_global_prefs('GLOBAL_TEMP_TABLE_STATS', 'SESSION');
+
+select table_name, num_rows, scope from user_tab_statistics where table_name = 'T1';
+
+-- Top frequency histogram --
+-----------------------------
+
+-- Creating the table and inserting the records
+
+create table T1 (col1 number, col2 number, col3 varchar2(10));
+
+insert into T1 select level, case when level <= 9000 then trunc(DBMS_RANDOM.value(1,10)) else level end, 'row '||level from dual connect by level <= 10000;
+
+commit;
+
+-- Creating index and gathering statistics
+
+create index I_T1_COL2 on T1(col2) ;
+
+exec dbms_stats.gather_table_stats(user,'T1',method_opt => 'for columns col2 size 10');
+
+-- Note that we are using method_opt => ‘for columns col2 size 10’. So this is going to create only 10 buckets.
+
+SELECT column_name, histogram FROM user_tab_columns WHERE  table_name = 'T1';
+
+-- the frequency represented by ENDPOINT_NUMBER is cumulative. Meaning its adding to the previous number.
+
+select endpoint_value, endpoint_number from user_tab_histograms where table_name = 'T1' and column_name = 'COL2';
+
+-- Below FREQUENCY column shows individual ENDPOINT_VALUE frequency and not cumulative frequency.
+
+select endpoint_value, endpoint_number, endpoint_number - (lag(endpoint_number,1) over (order by endpoint_value)) "frequency" from user_tab_histograms where table_name = 'T1' and column_name = 'COL2';
+
+-- We can also check endpoint_repeat_count and how it differentiates clearly between popular values and non-popular values.
+
+select endpoint_value, endpoint_number, endpoint_repeat_count from user_tab_histograms where table_name = 'T1' and column_name = 'COL2';
+
+-- Extended statistics enhancements --
+--------------------------------------
+
+-- Reviewing the column group usage
+set long 999999
+set line 9999
+set pagesize 9999
+select dbms_stats.report_col_usage('OE','ORDER_ITEMS') from dual;
+
+-- Creating extended stats
+
+select dbms_stats.create_extended_stats('OE','ORDER_ITEMS') from dual;
+
+-- Adaptive SPM – Oracle12c --
+------------------------------
+
+-- As you can see in the following, we have autotask task of sql tuning advisor configured and it runs a task name called AUTO_SQL_TUNING_PROG
+
+select client_name, task_name from dba_autotask_task where CLIENT_NAME = 'sql tuning advisor';
+
+-- Configuring SPM evolve advisor task
+
+select parameter_name, parameter_value from dba_advisor_parameters where task_name = 'SYS_AUTO_SPM_EVOLVE_TASK' and parameter_value != 'UNUSED';
+
+-- You can change that and set ACCEPT_PLANS to false using DBMS_SPM.SET_EVOLVE_TASK_PARAMETER as shown in the following
+
+exec dbms_spm.set_evolve_task_parameter('SYS_AUTO_SPM_EVOLVE_TASK','ACCEPT_PLANS','FALSE');

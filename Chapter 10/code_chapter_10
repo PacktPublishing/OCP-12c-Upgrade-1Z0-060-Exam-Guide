@@ -1,0 +1,211 @@
+Codes and commands for Chapter 10
+=================================
+
+-- Static registration --
+-------------------------
+
+-- sample listener.ora file
+
+l_deo_001 =
+    (description =
+        (address_list =
+            (address=(protocol=tcp)(host=deo-server.example.com)(port=1529))))
+sid_list_l_deo_001 =
+    (sid_list =
+        (sid_desc =
+            (sid_name = deo)
+            (oracle_home = /u01/app/oracle/product/12.1.0.2/dbhome_1))
+    (sid_desc =
+            (GLOBAL_DBNAME = deo.example.com)
+            (sid_name = deo)
+            (oracle_home = /u01/app/oracle/product/12.1.0.2/dbhome_1))
+    )
+
+
+-- Monitoring database operations with server-generated alerts --
+-----------------------------------------------------------------
+
+-- following example shows how to set thresholds with the SET_THRESHOLD procedure for CPU time for each user call for an instance
+
+DBMS_SERVER_ALERT.SET_THRESHOLD(
+DBMS_SERVER_ALERT.CPU_TIME_PER_CALL, DBMS_SERVER_ALERT.OPERATOR_GE, '8000', 
+DBMS_SERVER_ALERT.OPERATOR_GE, '10000', 1, 2, 'deo',
+DBMS_SERVER_ALERT.OBJECT_TYPE_SERVICE, 'deo.example.com');
+
+
+-- Recompiling invalid objects --
+---------------------------------
+
+-- identify the invalid object using DBA_INVALID_OBJECTS:
+
+select owner, object_name, object_type from DBA_INVALID_OBJECTS;
+
+-- Enabling and disabling automatic SQL tuning --
+-------------------------------------------------
+
+-- enable automatic SQL tuning
+
+BEGIN
+  DBMS_AUTO_TASK_ADMIN.ENABLE(
+    client_name => 'sql tuning advisor', 
+    operation => NULL, 
+    window_name => NULL);
+END;
+/
+
+-- To disable automatic SQL tuning
+
+BEGIN
+  DBMS_AUTO_TASK_ADMIN.DISABLE(
+    client_name => 'sql tuning advisor', 
+    operation => NULL, 
+    window_name => NULL);
+END;
+/
+
+
+-- Configuring automatic SQL tuning
+
+BEGIN
+  DBMS_SQLTUNE.SET_TUNING_TASK_PARAMETER(
+    task_name => 'SYS_AUTO_SQL_TUNING_TASK',
+    parameter => 'ACCEPT_SQL_PROFILES', value => 'TRUE');
+END;
+/
+
+-- Managing long idle sessions by creating appropriate user profiles --
+-----------------------------------------------------------------------
+
+CREATE PROFILE app_user LIMIT 
+   SESSIONS_PER_USER          UNLIMITED 
+   CPU_PER_SESSION            UNLIMITED 
+   CPU_PER_CALL               3000 
+   CONNECT_TIME               45 
+   LOGICAL_READS_PER_SESSION  DEFAULT 
+   LOGICAL_READS_PER_CALL     1000 ;
+
+CREATE PROFILE app_user2 LIMIT
+   FAILED_LOGIN_ATTEMPTS 5
+   PASSWORD_LIFE_TIME 60
+   PASSWORD_REUSE_TIME 60
+   PASSWORD_REUSE_MAX 5
+   PASSWORD_VERIFY_FUNCTION verify_function
+   PASSWORD_LOCK_TIME 1/24
+   PASSWORD_GRACE_TIME 10;
+
+-- Using the OPatch utility --
+------------------------------
+
+-- To apply the patch, you can perform the following steps
+
+export PATH=$PATH:$ORACLE_HOME/OPatch
+opatch lsinventory | grep <patch_number>
+opatch prereq CheckConflictAgainstOHWithDetail -ph ./
+opatch apply
+
+-- Incremental backup and block change tracking file --
+-------------------------------------------------------
+
+-- You can enable block change tracking using following command
+
+ALTER DATABASE ENABLE BLOCK CHANGE TRACKING using file '/u01/app/oracle/fast_recovery_area/deo/rman_change_tracking.dbf';
+
+-- You can check if block change tracking is enabled or not and change tracking file using following command
+
+select * from V$BLOCK_CHANGE_TRACKING;
+
+-- Implement Flashback Technology--
+-----------------------------------
+
+-- Enabling Oracle Flashback
+
+alter database flashback on;
+
+-- Enabling Flashback data archive
+
+--- Create flashback data archive tablespace
+
+create tablespace fda1 datafile '/u01/app/oracle/oradata/deo/deo/datafiles/fda-01.dbf' size 500M;
+
+--- Create flashback data archive and use above tablespace for storage
+
+create flashback archive FDA1 tablespace fda1 quota 200M retention 1 year;
+
+--- Enabling flashback data archive. To enable flashback archiving for a table, include the FLASHBACK ARCHIVE clause in either the CREATE TABLE or ALTER TABLE statement.
+
+create table T1(
+col1 number,
+col2 varchar2(10)) FLASHBACK ARCHIVE FDA1;
+
+--- or
+
+alter table T1 flashback archive fda1;
+
+-- Relocate SYSAUX occupants --
+-------------------------------
+
+-- Checking sysaux occupants
+
+select OCCUPANT_NAME, OCCUPANT_DESC, SCHEMA_NAME, MOVE_PROCEDURE, SPACE_USAGE_KBYTES from v$sysaux_occupants where OCCUPANT_NAME = 'ORDIM';
+
+-- move the component to USERS tablespace
+
+exec ordsys.ord_admin.move_ordim_tblspc('USERS');
+
+-- Create a default permanent tablespace --
+-------------------------------------------
+
+ALTER DATABASE DEFAULT TABLESPACE <tsname>;
+
+-- Example
+
+alter database default tablespace users;
+
+SELECT PROPERTY_VALUE FROM DATABASE_PROPERTIES WHERE PROPERTY_NAME =  'DEFAULT_PERMANENT_TABLESPACE';
+
+-- Use secure file LOBs --
+--------------------------
+
+-- When you create a table having LOB column, you can use the STORE AS SECUREFILE clause to create the LOB as SecureFile LOB
+
+CREATE TABLE t1 (a CLOB)
+    LOB(a) STORE AS SECUREFILE(
+    COMPRESS LOW
+    DEDUPLICATE
+    CACHE
+  ) tablespace users; 
+
+-- you can also use ALTER TABLE statement to alter the LOB parameters as required.
+
+ALTER TABLE t1 MODIFY
+   LOB(a) (
+           COMPRESS LOW
+   ); 
+
+ALTER TABLE t1 MODIFY 
+     LOB(a) (
+         KEEP_DUPLICATES 
+    ); 
+
+
+-- Use direct NFS --
+--------------------
+
+-- Following are the steps to enable or disable direct NFS direct NFS
+
+--- Execute these commands to set libraries for direct NFS:
+
+cd $ORACLE_HOME/lib
+mv libodm11.so libodm11.so_stub
+ln -s libnfsodm11.so libodm11.so
+
+--- To enable direct NFS
+
+cd $ORACLE_HOME/rdbms/lib
+make -f ins_rdbms.mk dnfs_on
+
+--- To disable direct NFS
+
+cd $ORACLE_HOME/rdbms/lib
+make -f ins_rdbms.mk dnfs_off
+

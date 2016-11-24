@@ -1,0 +1,168 @@
+Code and commands for Chapter 13
+================================
+
+-- User security --
+-------------------
+
+-- When we create a user, we need to assign a password to that user using the IDENTIFIED BY clause, as shown in the following
+
+CREATE USER jward
+ IDENTIFIED BY password
+ DEFAULT TABLESPACE data_ts
+ QUOTA 100M ON test_ts
+ QUOTA 500K ON data_ts
+ TEMPORARY TABLESPACE temp_ts
+ PROFILE clerk;
+
+
+-- You can assign a quota to a user on multiple tablespaces apart from the default tablespace
+
+alter user test_user quota 100m on test_ts;
+
+-- You can also grant unlimited quotas to the user on a tablespace as shown in the following
+
+alter user test_user quota unlimited on test_ts;
+
+-- Specifying a profile for the user. You can create profile for user as shown below
+
+CREATE PROFILE app_user LIMIT 
+   SESSIONS_PER_USER          UNLIMITED 
+   CPU_PER_SESSION            UNLIMITED 
+   CPU_PER_CALL               3000 
+   CONNECT_TIME               45 
+   LOGICAL_READS_PER_SESSION  DEFAULT 
+   LOGICAL_READS_PER_CALL     1000 
+   PRIVATE_SGA                15k;
+
+
+CREATE PROFILE app_user2 LIMIT
+   FAILED_LOGIN_ATTEMPTS 5
+   PASSWORD_LIFE_TIME 60
+   PASSWORD_REUSE_TIME 60
+   PASSWORD_REUSE_MAX 5
+   PASSWORD_VERIFY_FUNCTION verify_function
+   PASSWORD_LOCK_TIME 1/24
+   PASSWORD_GRACE_TIME 10;
+
+-- You cannot assign a default role at the time of the creation of a user, but you can alter the user and assign a default role
+
+GRANT USER deo manager_role;
+ALTER USER advait DEFAULT ROLE manager;
+
+-- Auditing SQL statements --
+-----------------------------
+
+-- If you omit this clause (WHENEVER SUCCESSFUL or WHENEVER NOT SUCCESSFUL), Oracle will audit both
+
+AUDIT DELETE ANY TABLE BY ACCESS WHENEVER NOT SUCCESSFUL;
+
+-- if you specify BY ACCESS or don’t specify anything, Oracle will make an entry for each audited statement and operation. The BY ACCESS audit records have separate LOGON and LOGOFF entries, each with fine-grained timestamps
+
+AUDIT SELECT TABLE BY ACCESS;
+
+-- the NOAUDIT statement does not support the BY ACCESS clause
+
+NOAUDIT SELECT TABLE, INSERT TABLE, DELETE TABLE, EXECUTE PROCEDURE
+NOAUDIT DELETE ANY TABLE BY deo_user;
+
+
+-- Fine-grained auditing --
+---------------------------
+
+-- Creating a fine-grained audit policy 
+
+BEGIN
+  DBMS_FGA.ADD_POLICY(
+   object_schema      => ‘HR’,
+   object_name        => ‘DEPT’,
+   policy_name        => ‘check_dept_values’,
+   enable             =>  TRUE,
+   statement_types    => ‘INSERT, UPDATE, SELECT, DELETE’,
+   audit_trail        =>  DBMS_FGA.DB);
+END;
+
+-- Disabling and enabling a fine-grained audit policy
+
+--- Disabling a fine-grained audit policy
+
+DBMS_FGA.DISABLE_POLICY(
+  object_schema        => ‘HR’,
+  object_name          => ‘EMPLOYEES’,
+  policy_name          => ‘chk_hr_employees’);
+
+--- Enabling a fine-grained audit policy
+
+DBMS_FGA.ENABLE_POLICY(
+  object_schema        => ‘HR’,
+  object_name          => ‘EMPLOYEES’,
+  policy_name          => ‘chk_hr_employees’,
+  enable               => TRUE);
+
+-- Dropping a fine-grained audit policy
+
+DBMS_FGA.DROP_POLICY(
+  object_schema      => ‘HR’,
+  object_name        => ‘EMPLOYEES’,
+  policy_name        => ‘chk_hr_employees’);
+
+
+
+-- Password file --
+-------------------
+
+-- Create the password file 
+
+orapwd FILE=orapworcl ENTRIES=30
+
+-- Viewing password file members
+
+select * from V$PWFILE_USERS;
+
+-- Using transparent data encryption --
+---------------------------------------
+
+-- Setting the master encryption key
+
+ALTER SYSTEM SET ENCRYPTION KEY [“certificate_ID”] IDENTIFIED BY “password”
+
+-- Opening and closing the encrypted wallet
+
+ALTER SYSTEM SET ENCRYPTION WALLET OPEN IDENTIFIED BY “password”
+
+-- Following commands shows how to close the wallet
+
+ALTER SYSTEM SET ENCRYPTION WALLET CLOSE IDENTIFIED BY “password”
+
+-- Creating tables with encrypted columns
+
+--- Creating a new table with an encrypted column using the default algorithm 
+
+CREATE TABLE employee (
+     first_name VARCHAR2(128),
+     last_name VARCHAR2(128),
+     empID NUMBER,
+     salary NUMBER(6) ENCRYPT
+);
+
+
+-- Creating a new table with an encrypted column Using 3DES168 and NO SALT
+
+CREATE TABLE employee (
+     first_name VARCHAR2(128),
+     last_name VARCHAR2(128),
+     empID NUMBER ENCRYPT NO SALT,
+     salary NUMBER(6) ENCRYPT USING ‘3DES168’
+);
+
+-- Encrypting an unencrypted column
+
+ALTER TABLE employee MODIFY (first_name ENCRYPT);
+
+-- Creating an encrypted tablespace
+
+CREATE TABLESPACE securespace
+DATAFILE ‘/home/user/oradata/secure01.dbf’
+SIZE 150M
+ENCRYPTION USING ‘3DES168’
+DEFAULT STORAGE(ENCRYPT);
+

@@ -1,0 +1,331 @@
+Codes and commands for chapter 4
+================================
+
+-- Enabling and disabling heat maps --
+--------------------------------------
+
+-- you can enable by setting the new initialization parameter heat_map
+
+alter system set heat_map = on;
+
+-- You can turn off the heat map by setting the parameter to off as shown here:
+
+alter system set heat_map = off;
+
+-- Checking heat map details for segments
+
+select object_name, SUBOBJECT_NAME, TRACK_TIME, SEGMENT_WRITE, SEGMENT_READ, FULL_SCAN, LOOKUP_SCAN, con_id from v$heat_map_segment order by 2;
+
+-- Checking heap map segment histogram
+
+select object_name, subobject_name, track_time, SEGMENT_WRITE, full_scan, lookup_scan from DBA_HEAT_MAP_SEG_HISTOGRAM;
+
+
+-- ADO policies for compression action --
+-----------------------------------------
+
+-- Tablespace level compression policy
+
+ALTER TABLESPACE USERS DEFAULT ILM ADD POLICY
+ROW STORE COMPRESS ADVANCED
+SEGMENT AFTER 30 DAYS OF NO ACCESS
+
+-- Group level compression policy
+
+ALTER TABLE SALES ILM ADD POLICY
+ROW STORE COMPRESS ADVANCED
+GROUP AFTER 60 DAYS OF NO MODIFICATION
+
+ALTER TABLE SALES MODIFY PARTITION P1 ILM ADD POLICY
+COLUMN STORE COMPRESS FOR ARCHIVE HIGH
+GROUP AFTER 3 MONTHS OF CREATION
+
+
+-- Segment level compression policy
+
+ALTER TABLE SALES ILM ADD POLICY
+COLUMN STORE COMPRESS FOR QUERY HIGH
+SEGMENT AFTER 90 DAYS OF NO MODIFICATION
+
+
+ALTER TABLE SALES ILM ADD POLICY
+ROW STORE COMPRESS
+SEGMENT AFTER 1 YEAR OF CREATION
+
+-- Row level compression policy
+
+ALTER TABLE SALES ILM ADD POLICY
+ROW STORE COMPRESS ADVANCED
+ROW AFTER 30 DAYS OF NO MODIFICATION
+
+-- ADO policies for data movement action --
+-------------------------------------------
+
+ALTER TABLE SALES ILM ADD POLICY
+TIER TO low_cost_storage
+SEGMENT AFTER 60 DAYS OF CREATION
+
+-- Checking ILM parameters
+
+select * from dba_ilmparameters;
+
+-- Changing ILM parameter TBS_PERCENT_USED
+
+exec dbms_ilm_admin.customize_ilm(dbms_ilm_admin.tbs_percent_used,90);
+
+-- Setting the policy
+
+ALTER TABLE SALES ILM ADD POLICY
+TIER TO low_cost_storage
+
+-- Implementing multiple policies on a segment --
+-------------------------------------------------
+
+alter table demo_user.sales ilm add policy row store compress advanced segment after 2 days of no access;
+
+alter table demo_user.sales ilm add policy column store compress for query high segment after 30 days of no access;
+
+alter table demo_user.sales ilm add policy column store compress for archive high segment after 60 days of creation;
+
+
+alter table demo_user.sales ilm add policy row store compress advanced row after 7 days of no modification;
+
+alter table demo_user.sales ilm add policy column store compress for query high segment after 30 days of no modification;
+
+
+-- Policy priority and policy inheritance --
+--------------------------------------------
+
+-- check different policies implemented on different objects
+
+select policy_name, object_name, subobject_name, object_type, inherited_from from dba_ilmobjects;
+
+-- Checking ILM policy details
+
+select * from dba_ilmpolicies;
+
+select policy_name, action_type, compression_level, condition_type, condition_days from DBA_ILMDATAMOVEMENTPOLICIES;
+
+-- Evaluating and executing ADO policies --
+-------------------------------------------
+
+-- use following procedure to customize execution the interval of ILM tasks
+
+exec dbms_ilm_admin.customize_ilm(dbms_ilm_admin.execution_interval, 1);
+
+-- Manually executing ADO policies --
+-------------------------------------
+
+var v_task_id number;
+exec DBMS_ILM.PREVIEW_ILM(TASK_ID=> :v_task_id, ILM_SCOPE=>DBMS_ILM.SCOPE_SCHEMA);
+
+exec DBMS_ILM.ADD_TO_ILM(TASK_ID=>1234, OWN=>DEMO_USER', OBJ_NAME=>'NEW_TABLE');
+
+exec DBMS_ILM.EXECUTE_ILM_TASK(TASK_ID=>1234);
+
+-- Checking execution details of ADO policies --
+------------------------------------------------
+
+-- Checking every task that is executed manually or automatically 
+
+select TASK_ID, STATE, START_TIME, COMPLETION_TIME from DBA_ILMTASKS order by task_id;
+
+-- Enabling/disabling ADO policies
+
+alter table demo_user.sales ilm disable policy P25;
+
+
+alter table demo_user.sales ilm enable policy P25;
+
+
+--  enable/disable all policies on a table
+
+alter table demo_user.sales ilm disable_all;
+
+
+alter table demo_user.sales ilm enable_all;
+
+-- Deleting ADO policies
+
+alter table demo_user.sales ilm delete policy P24;
+
+-- deleting all policies
+
+alter table demo_user.sales ilm delete_all;
+
+-- Enabling disabling ILM
+
+exec DBMS_ILM_ADMIN.DISABLE_ILM;
+
+exec DBMS_ILM_ADMIN.ENABLE_ILM;
+
+-- Moving datafile online
+
+alter database move datafile '/u01/app/oracle/oradata/deo/deo/datafiles/system-01.dbf' to '/u02/app/oracle/oradata/deo/deo/datafiles/system-01.dbf' ;
+
+-- Moving partition online
+
+alter table demo_user.sales move partition p1 tablespace low_cost_storage update indexes online;
+
+alter table demo_user.sales move partition p2 row store compress advanced update indexes online;
+
+-- In-database archiving and temporal validity --
+-------------------------------------------------
+
+-- Create a table with clause row archival
+
+create table ilm_table1 (eno number, ename varchar2(20), sal number) row archival;
+
+insert into ilm_table1 values (1, 'avdeo', 10000);   
+insert into ilm_table1 values (2, 'imorishe', 20000);
+insert into ilm_table1 values (3, 'avdeo2', 30000);
+insert into ilm_table1 values (4, 'imorishe2', 40000);
+
+select * from ilm_table1;
+
+select eno, ename, sal, ora_archive_state from ilm_table1;
+
+alter table ilm_table1 modify (ora_archive_state visible);
+
+-- following shows that the column is hidden and it is not user generated
+
+select table_name, column_name, hidden_column, user_generated from user_tab_cols  where table_name = 'ILM_TABLE1';
+
+-- Making few rows inactive
+
+update ilm_table1 set ora_archive_state = 2 where eno=1;
+update ilm_table1 set ora_archive_state= dbms_ilm.archivestatename(2) where eno=2;
+
+select eno, ename, sal, ora_archive_state from ilm_table1;
+
+alter session set row archival visibility = all;
+
+select eno, ename, sal, ora_archive_state from ilm_table1;
+
+-- Following is an example describing how temporal validity works
+
+create table orders as select * from OE.orders;
+
+select count(*) from orders;
+
+alter table orders add period for track_time;
+
+select column_name, hidden_column from user_tab_cols where table_name='ORDERS';
+
+-- Update the table such that rows with timestamp > 31-MAR-2010 are to set be active or valid.
+
+update orders set track_time_start=sysdate ;
+
+update orders set track_time_end=sysdate where time_id < '31-MAR-2010'; 
+
+execute DBMS_FLASHBACK_ARCHIVE.enable_at_valid_time('CURRENT');
+
+The count(*) from the table ORDERS returns the rows which we are active or current.
+
+select count(*) from orders;
+
+-- move the data from 31-MAR-2010 to 31-MAR-2014
+
+update orders set track_time_end=sysdate where time_id < '31-MAR-2014';
+
+-- Now the count(*) returns less rows
+
+ecute DBMS_FLASHBACK_ARCHIVE.enable_at_valid_time('CURRENT');
+
+select count(*) from orders;
+
+execute DBMS_FLASHBACK_ARCHIVE.enable_at_valid_time('ALL');
+
+-- In-database archiving --
+---------------------------
+
+create table sales_archive
+(year number(4),
+product varchar2(10),
+amt number(10,2))
+row archival;
+
+-- check if the column is added or not using the dba_tab_columns view:
+
+select table_name, column_name, column_id, HIDDEN_COLUMN from dba_tab_cols where table_name = 'SALES_ARCHIVE';
+
+alter table sales row archival:
+
+select table_name, column_name, column_id, HIDDEN_COLUMN from dba_tab_cols where table_name = 'SALES';
+
+-- check the value of ORA_ARCHIVE_STATE column
+
+select year, product, amt, ORA_ARCHIVE_STATE from sales_archive;
+
+-- following DML shows how to mark the data inactive
+
+update sales_archive set ORA_ARCHIVE_STATE = DBMS_ILM.ARCHIVESTATENAME(1) where year = 2001;
+
+-- query the table again, you won't see the record that we have updated.
+
+select year, product, amt, ORA_ARCHIVE_STATE from sales_archive;
+
+-- view archived records again by setting row archival visibility parameter to ALL 
+
+alter session set row archival visibility = ALL;
+
+select year, product, amt, ORA_ARCHIVE_STATE from sales_archive;
+
+
+-- Set the visibility to ACTIVE again
+
+alter session set row archival visibility = ACTIVE;
+
+-- Disable row archival
+
+alter table sales no row archival;
+
+-- Temporal validity and temporal history --
+--------------------------------------------
+
+-- Defining temporal validity
+
+create table policy
+(cust_id number,
+policy_no number,
+policy_type varchar2(20),
+user_time_start date,   
+user_time_end date,
+period for user_time (user_time_start, user_time_end));
+
+create table policy
+(cust_id number,
+policy_no number,
+policy_type varchar2(20),
+period for user_time);
+
+
+-- Following shows an insert statement into the policy table where we created implicit valid-time dimension columns
+
+insert into policy (cust_id, policy_no, policy_type, user_time_start, user_time_end) values (123, 3424, 'HEALTH',sysdate, null);
+
+select * from policy;
+
+select cust_id, policy_no, policy_type, user_time_start from policy;
+
+-- PERIOD FOR clause
+
+-- following example displays all policies that were active as on 01-Jan-2016:
+
+select * from policy AS OF PERIOD FOR user_time to_date('01-JAN-2016','DD-MON-YYYY');
+
+-- another example which shows valid data between 01-JAN-2016 and 01-FEB-2016:
+
+select * from policy VERSIONS PERIOD FOR user_time between to_date('01-JAN-2016','DD-MON-YYYY') and to_date('01-FEB-2016','DD-MON-YYYY');
+
+
+-- using DBMS_FLASHBACK_ARCHIVE --
+----------------------------------
+
+-- setting the visibility of data as of a given time 01-JAN-2016.
+
+exec DBMS_FLASHBACK_ARCHIVE.ENABLE_AT_VALID_TIME('ASOF',to_date('01-JAN-2016','DD-MON-YYYY'));
+
+-- set the visibility to current time
+
+exec DBMS_FLASHBACK_ARCHIVE.ENABLE_AT_VALID_TIME('CURRENT'));

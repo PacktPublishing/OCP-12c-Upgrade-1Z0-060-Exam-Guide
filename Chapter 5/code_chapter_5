@@ -1,0 +1,349 @@
+Code and commands for Chapter 5
+===============================
+
+
+-- Unified Auditing --
+-----------------------
+
+-- change the mode from queued-write to immediate-write in unified auditing
+
+exec dbms_audit_mgmt.set_audit_trail_property( -
+dbms_audit_mgmt.audit_trail_unified, -
+dbms_audit_mgmt.audit_trail_write_mode, -
+dbms_audit_mgmt.audit_trail_immediate_write);
+
+-- manually flush the audit information from the memory disk in the AUDSYS table
+
+exec sys.dbms_audit_mgmt.flush_unified_audit_trail;
+
+-- Convert database to pure unified auditing
+
+shut immediate
+cd $ORACLE_HOME/rdbms/lib
+make -f ins_rdbms.mk uniaud_on ioracle ORACLE_HOME=$ORACLE_HOME
+startup
+SELECT VALUE FROM V$OPTION WHERE PARAMETER = 'Unified Auditing';
+
+-- Create the audit policy to capture the audit records for export or import or both
+
+create audit policy dp_pol_both actions component=datapump ALL;
+
+-- Enable audit policy
+
+audit policy db_pol_both;
+
+-- Execute a datapump operation
+
+expdp hr/hr dumpfile=HR_tables tables=emp,dept
+
+-- Creating and enabling unified audit policy --
+------------------------------------------------
+
+-- Creating a system-wide audit policy
+
+-- audit policy will audit all users which uses “CREATE ANY TABLE” system privilege.
+
+create audit policy audit_syspriv_pol privileges create any table;
+
+-- audit policy will audit all users which uses “ALTER ANY TABLE” system privilege.
+
+create audit policy audit_act_pol actions alter any table;
+
+-- audit policy will audit all users which uses “EMP_ROLE” role.
+
+create audit policy audit_rol_pol roles emp_role;
+
+-- audit policy will audit all users which uses “CREATE ANY TABLE” system privilege or “ALTER ANY TABLE” system privilege or “EMP_ROLE” role.
+
+create audit policy audit_mix_pol1
+privileges create any table 
+actions alter any table
+roles emp_role;
+
+-- audit policy is a common audit policy which will audit all users which uses “CREATE ANY TABLE” system privilege or “ALTER ANY TABLE” system privilege or “EMP_ROLE” role on all containers
+
+create audit policy audit_mix_pol2
+privileges create any table 
+actions alter any table
+roles emp_role
+container=all;
+
+-- Creating an object-specific audit policy --
+----------------------------------------------
+
+-- Following audit policy audits all updates on HR.EMP table
+
+create audit policy audit_updt_pol actions update on hr.emp;
+
+-- Following audit policy audits all sessions doing execute on HR.ADJ_SAL_PROC procedure.
+
+create audit policy audit_exec_pol actions execute on hr.adj_sal_proc
+
+-- Using conditions and evaluation --
+-------------------------------------
+
+-- following example creates an audit policy based on condition user HR, which is evaluated once per session on actions as “alter on t1 table” and “update on t2 table” of OE schema
+
+create audit policy audit_cond_pol
+actions alter on oe.t1, update on oe.t2
+when 'sys_context ('userenv'',''session_user'')=' 'HR'''
+evaluate per session;
+
+-- following example creates an audit policy based on condition user OE, which is evaluated once per statement, and actions being performed are “insert on T1 table” and “update on T2 table” owned by the OE schema
+
+create audit policy test_policy_t1_t2
+actions insert on oe.t1, update on oe.t2 
+when 'SYS_CONTEXT(''USERENV'', ''SESSION_USER'') = ''OE''' 
+evaluate per statement;
+
+-- You can also configure a policy that can be evaluated once per instance:
+
+create audit policy aud_policy_t1
+actions delete on oe.t1
+when 'SYS_CONTEXT(''USERENV'', ''INSATNCE_NAME'') = ''deo'''
+evaluate per instance;
+
+
+-- Modifying audit policies --
+------------------------------
+
+-- Enabling audit policies
+
+audit policy audit_syspriv_pol;
+audit policy audit_act_pol by sys;   
+audit policy audit_rol_pol except scott;
+audit policy audit_mix_pol1 whenever successful;
+audit policy audit_mix_pol2 whenever not successful;
+
+-- Altering audit policies
+
+alter audit policy audit_syspriv_pol add privileges drop any table;
+alter audit policy orders_mixcond_pol1 condition drop;
+
+-- Disabling audit policies
+
+noaudit policy audit_syspriv_pol;
+noaudit policy audit_act_pol by sys;
+
+-- Dropping audit policies
+
+drop audit policy audit_syspriv_pol;
+drop audit policy audit_actions_pol;
+
+-- Viewing audit policies
+
+select policy_name, audit_option, condition_eval_opt from audit_unified_policies;
+
+select policy_name, enabled_opt, user_name, success, failure from audit_unified_enabled_policies
+
+-- Using predefined audit policies
+
+select policy_name, audit_option from audit_unified_policies where policy_name in ('ORA_ACCOUNT_MGMT', 'ORA_DATABASE_PARAMETER', 'ORA_SECURECONFIG');
+
+-- Capturing application context
+
+AUDIT CONTEXT NAMESPACE MY_CONTEXT ATTRIBUTES MY_SESSION, MY_LOCATION by SCOTT;
+
+-- view all the application contexts that are getting audited
+
+select application_contexts from unified_audit_trail where application_contexts is not null;
+
+-- Cleanup audit data
+
+BEGIN
+  DBMS_AUDIT_MGMT.CREATE_PURGE_JOB (
+   AUDIT_TRAIL_TYPE            => DBMS_AUDIT_MGMT.AUDIT_TRAIL_UNIFIED, 
+   AUDIT_TRAIL_PURGE_INTERVAL  => 12,
+   AUDIT_TRAIL_PURGE_NAME      => 'Audit_Trail_PJ',
+   USE_LAST_ARCH_TIMESTAMP     => TRUE,
+   CONTAINER                   => DBMS_AUDIT_MGMT.CONTAINER_CURRENT);
+END;
+
+-- purge audit records 
+
+BEGIN
+  DBMS_AUDIT_MGMT.CLEAN_AUDIT_TRAIL(
+   AUDIT_TRAIL_TYPE           =>  DBMS_AUDIT_MGMT.AUDIT_TRAIL_UNIFIED,
+   USE_LAST_ARCH_TIMESTAMP    =>  TRUE,
+   CONTAINER                  =>  DBMS_AUDIT_MGMT.CONTAINER_CURRENT );
+END;
+/ 
+
+-- New password file --
+-----------------------
+
+-- Granting administrative privilege
+
+grant sysbackup to deo;
+
+select * from v$pwfile_users where username = 'DEO';
+
+-- use the ORAPWD utility to make an entry in the password file
+
+orapwd file=orapwdeo sysbackup=y
+
+select * from v$pwfile_users;
+
+-- Privilege analysis --
+------------------------
+
+-- Database type privilege analysis policy
+
+exec DBMS_PRIVILEGE_CAPTURE.CREATE_CAPTURE (    -
+    name        => 'DB_LEVEL_PRIVS',            -
+    description => 'All privileges',            -
+    type        => DBMS_PRIVILEGE_CAPTURE.G_DATABASE); 
+
+
+-- Role type privilege analysis policy:
+
+exec DBMS_PRIVILEGE_CAPTURE.CREATE_CAPTURE (    -
+    name        => 'ROLE_PRIVS',                     -
+    description => 'Pivileges in roles',             -
+    type        => DBMS_PRIVILEGE_CAPTURE.G_ROLE,    - 
+    roles       => ROLE_NAME_LIST('role1','role2')); 
+
+-- Context type privilege analysis policy
+
+
+exec DBMS_PRIVILEGE_CAPTURE.CREATE_CAPTURE (    -
+    name        => 'CONTEXT_PRIVS',                  -
+    description => 'Privileges for user',            -
+    type        => DBMS_PRIVILEGE_CAPTURE.G_CONTEXT, - 
+    condition   => 'SYS_CONTEXT(''USERENV'',''SESSION_USER'') = ''HR'''); 
+
+-- Role and context type privilege analysis policy
+
+exec DBMS_PRIVILEGE_CAPTURE.CREATE_CAPTURE (                 -
+    name        => 'ROLE_CONTEXT_PRIVS',                          -
+    description => 'public Pivileges used by module order_entry', -
+    type        => DBMS_PRIVILEGE_CAPTURE.G_ROLE_AND_CONTEXT,     - 
+    roles       => ROLE_NAME_LIST('PUBLIC'),                      -
+    condition   => 'SYS_CONTEXT(''USERENV'',''MODULE'') = ''order_entry'''); 
+
+-- Enabling privilege analysis
+
+exec DBMS_PRIVILEGE_CAPTURE.ENABLE_CAPTURE(name => 'DB_LEVEL_PRIVS');
+
+-- Disabling the privilege analysis
+
+exec DBMS_PRIVILEGE_CAPTURE.DISABLE_CAPTURE(name => 'DB_LEVEL_PRIVS');
+
+-- Generating a privilege analysis report
+
+exec DBMS_PRIVILEGE_CAPTURE.GENERATE_RESULT(name => 'DB_LEVEL_PRIVS');
+
+-- Viewing the report
+
+select CAPTURE, SYS_PRIV, PATH from DBA_UNUSED_PRIVS where USERNAME = 'DEO';
+
+select CAPTURE, SYS_PRIV, PATH from DBA_USED_PRIVS where username = 'DEO' order by 1, 2;
+
+-- Dropping the privilege analysis policy
+
+exec DBMS_PRIVILEGE_CAPTURE.DROP_CAPTURE(name => 'CONTEXT_PRIVS');
+
+-- New privilege checking during PL/SQL calls
+
+create or replace procedure test_proc authid current_user as 
+  begin
+  insert into low_privs.T1 values (100,'TEST');
+  commit;
+  execute immediate 'grant dba to low_privs';
+  end;
+/
+
+-- create a high_privs user and grant a DBA role to that user with the admin option
+
+create user high_privs identified by oracle;
+
+grant dba to high_privs with admin option;
+
+-- the low_privs user does not have a DBA role assigned to it
+
+select * from dba_role_privs where grantee = 'LOW_PRIV';
+
+-- Next, we will execute the procedure using HIGH_PRIVS user and see what happens:
+
+connect high_privs/oracle
+exec low_privs.test_proc;
+
+-- We can see it has inserted the record in the T1 table
+
+select * from T1;
+
+-- But if we check the roles assigned to the LOW_PRIVS user, we can see that a DBA role is granted
+
+select * from dba_role_privs where grantee = 'LOW_PRIVS';
+
+-- New inherit privilege --
+---------------------------
+
+-- So in Oracle 12c, if the HIGH_PRIVS user executes the invoker's right procedure in the LOW_PRIVS schema, they will get error
+
+exec low_privs.test_proc;
+
+
+-- This is because we have not granted the new INHERIT PRIVILEGE privilege to the LOW_PRIVS user on the HIGH_PRIVS user. We can do so using the following grant statement:
+
+grant inherit privileges on user high_privs to low_privs;
+
+-- Oracle Data Redaction --
+---------------------------
+
+-- Adding a redaction policy to a table or view
+
+exec dbms_redact.ADD_POLICY(           -
+        OBJECT_SCHEMA   => 'ADVAITD',      -
+        OBJECT_NAME     => 'T1',        -
+        COLUMN_NAME     => 'COL1',        -
+        FUNCTION_TYPE   => DBMS_REDACT.FULL, -
+        POLICY_NAME     => 'TEST_POLICY',    -
+        EXPRESSION      => '1=1');
+
+select * from advaitd.t1;
+
+-- Modifying a redaction policy
+
+exec DBMS_REDACT.ALTER_POLICY( -
+        OBJECT_SCHEMA           =>'ADVAITD',                    -
+        OBJECT_NAME             =>'T1',                         - 
+        COLUMN_NAME             =>'COL2',                       - 
+        POLICY_NAME             =>'TEST_POLICY',                - 
+        ACTION                  => DBMS_REDACT.ADD_COLUMN,      -
+        FUNCTION_TYPE           => DBMS_REDACT.REGEXP,          -
+        EXPRESSION              => '1=1',                       -
+        REGEXP_PATTERN          => '(.+)@(.+\.[A-Za-z]{2,4})',  -
+        REGEXP_REPLACE_STRING   => '[hidden]\2',                -
+        REGEXP_POSITION         => DBMS_REDACT.RE_BEGINNING,    -
+        REGEXP_OCCURRENCE       => DBMS_REDACT.RE_ALL,          -
+        REGEXP_MATCH_PARAMETER  => 'i');
+
+select * from advaitd.t1;
+
+exec DBMS_REDACT.ALTER_POLICY( -
+        OBJECT_SCHEMA           =>'ADVAITD',                      -
+        OBJECT_NAME             =>'T1',                           - 
+        POLICY_NAME             =>'TEST_POLICY',                  - 
+        ACTION                  => DBMS_REDACT.MODIFY_EXPRESSION, -
+        EXPRESSION              => 'SYS_CONTEXT(''USERENV'',''SESSION_USER'') = ''APP_USER''');
+
+select * from advaitd.t1;
+
+-- Altering the default full data redaction value
+
+exec DBMS_REDACT.UPDATE_FULL_REDACTION_VALUES(NUMBER_VAL => -1);
+
+-- Enabling and disabling data redaction policies
+
+exec dbms_redact.enable_policy(OBJECT_SCHEMA => 'ADVAITD', OBJECT_NAME => 'T1',POLICY_NAME => 'TEST_POLICY');
+
+exec dbms_redact.disable_policy(OBJECT_SCHEMA => 'ADVAITD', OBJECT_NAME => 'T1',POLICY_NAME => 'TEST_POLICY');
+
+-- quering REDACTION_POLICIES
+
+select * from REDACTION_POLICIES;
+
+-- quering REDACTION_COLUMNS
+
+select OBJECT_OWNER, OBJECT_NAME, COLUMN_NAME, FUNCTION_TYPE, REGEXP_PATTERN, REGEXP_REPLACE_STRING, REGEXP_POSITION, REGEXP_OCCURRENCE from REDACTION_COLUMNS;

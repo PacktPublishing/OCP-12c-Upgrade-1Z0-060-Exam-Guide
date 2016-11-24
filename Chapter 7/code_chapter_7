@@ -1,0 +1,369 @@
+Codes and commands for Chapter 7
+================================
+
+-- Performing complete CDB backup --
+------------------------------------
+
+backup as compressed backupset database;
+
+-- Performing partial CDB backup --
+-----------------------------------
+
+-- To back up the ROOT container (CDB$ROOT)
+
+BACKUP AS COMPRESSED BACKUPSET DATABASE 'CDB$ROOT';
+
+-- use the  PLUGGABLE keyword to back up only the root container
+
+BACKUP AS COMPRESSED BACKUPSET PLUGGABLE DATABASE 'CDB$ROOT';
+
+-- We can also use the ROOT keyword to back up only the root container
+
+BACKUP AS COMPRESSED BACKUPSET DATABASE ROOT;
+
+-- Performing complete PDB backup --
+------------------------------------
+
+-- To connect to root and back up PDB1, perform:
+
+BACKUP AS COMPRESSED BACKUPSET PLUGGABLE DATABASE PDB1;
+
+-- To connect to PDB and perform a backup:
+
+rman target=sys/oracle@pdb1
+
+BACKUP AS COMPRESSED BACKUPSET DATABASE;
+
+-- Performing partial PDB backup --
+-----------------------------------
+
+-- The following command will perform a  backup of the SYSTEM tablespace of the PDB1 database:
+
+BACKUP AS COMPRESSED BACKUPSET TABLESPACE PDB1:SYSTEM;
+
+-- You can also connect to the respective PDB and perform the required backup of a tablespace, just like we do with non-CDB databases
+
+BACKUP TABLESPACE SYSTEM;
+
+-- Performing PDB hot backup --
+-------------------------------
+
+sqlplus pdb1_admin/oracle@pdb1
+
+ALTER PLUGGABLE DATABASE PDB1 BEGIN BACKUP;
+
+-- Copy all the datafiles of pluggable database PDB1:
+
+ALTER PLUGGABLE DATABASE END BACKUP;
+
+-- Archive log backup --
+------------------------
+
+-- following command shows you how to back up all archive logs and delete them from the source once the backup is complete
+
+rman target /
+
+BACKUP ARCHIVELOG ALL DELETE INPUT;
+
+-- Perform recovery of CDB and PDB --
+-------------------------------------
+
+-- Media failure - CDB temporary file recovery --
+-------------------------------------------------
+
+-- you can manually add another temp file, as shown in the following code, and drop the old tempfile
+
+alter tablespace temp add tempfile '/u01/app/oracle/oradata/deo/deo/temp02.dbf' size 50M;
+
+alter database tempfile '/u01/app/oracle/oradata/deo/deo/temp01.dbf' drop;
+
+-- Media failure - PDB temporary file recovery --
+-------------------------------------------------
+
+-- you can manually create a new temp file for the tablespace and drop the old temp file:
+
+alter tablespace temp add tempfile '/u01/app/oracle/oradata/deo/pdb1/pdb1_temp.dbf' size 100M;
+
+alter tablespace temp drop tempfile '/u01/app/oracle/oradata/deo/pdb1/pdbseed_temp012016-07-20_12-23-06-AM.dbf';
+
+-- Media failure - Control file Loss --
+---------------------------------------
+
+-- follow the  following steps to perform media recovery at CDB level
+
+startup
+restore controlfile from autobackup;
+alter database mount;
+recover database;
+alter database open resetlogs;
+alter pluggable database all open;
+
+
+-- Media Failure - Root SYSTEM or UNDO data file loss --
+--------------------------------------------------------
+
+-- Restore the missing datafile
+
+restore datafile '/u01/app/oracle/oradata/deo/deo/datafiles/undotbs01.dbf';
+
+-- Recover the datafile
+
+recover datafile '/u01/app/oracle/oradata/deo/deo/datafiles/undotbs01.dbf';
+
+-- Open CDB and all PDBs
+
+alter database open;
+alter pluggable database all open;
+
+-- Media failure - Root SYSAUX data file loss --
+------------------------------------------------
+
+-- Take the datafile offline and open the database
+
+alter database datafile '/u01/app/oracle/oradata/deo/deo/datafiles/sysaux01.dbf' offline;
+
+alter database open;
+
+-- Restore the SYSAUX datafile from backup:
+
+restore datafile '/u01/app/oracle/oradata/deo/deo/datafiles/sysaux01.dbf';
+
+-- Recover the datafile
+
+recover datafile '/u01/app/oracle/oradata/deo/deo/datafiles/sysaux01.dbf';
+
+-- Make the SYSAUX data file/tablespace online
+
+alter database datafile '/u01/app/oracle/oradata/deo/deo/datafiles/sysaux01.dbf' online;
+
+-- Media failure - PDB SYSTEM data file loss --
+-----------------------------------------------
+
+-- following command from the V$CONTAINERS view shows two PDBs in my CDB
+
+select name, open_mode from v$containers;
+
+-- recover from such a situation, complete the following steps
+
+-- Start the CDB database
+
+startup
+
+-- Open all pluggable databases, except the one which lost the SYSTEM datafile
+
+alter pluggable database all open;
+or
+alter pluggable database pdb2 open;
+
+
+-- Restore and recover the SYSTEM datafile of PDB1
+
+restore datafile '/u01/app/oracle/oradata/deo/pdb1/system01.dbf';
+
+recover datafile 
+
+-- Open the pluggable database PDB1
+
+alter pluggable database pdb1 open;
+
+-- Performing PDB PITR (Point-in-Time Recovery) --
+--------------------------------------------------
+
+
+-- We can check the incarnation details in the V$PDB_INCARNATION view.
+
+select DB_INCARNATION#, con_id, PDB_INCARNATION#, PRIOR_PDB_INCARNATION#, status from v$pdb_incarnation order by 1,2;
+
+-- To performing a PDB PITR, The following steps are performed in a PDB PITR when we run the following commands
+
+run{
+    set until time '24-JUL-2016';
+    restore pluggable database pdb1;
+    recover pluggable database pdb1 auxiliary destination='/u01/app/oracle/oradata/aux';
+    alter pluggable database PDB1 open resetlogs;
+}
+
+-- following RMAN code shows how to perform a point-in-time recovery of a pluggable database
+
+run{
+set until time '24-JUL-2016';
+restore pluggable database pdb1;
+recover pluggable database pdb1 auxiliary destination='/u01/app/oracle/oradata/aux';
+alter pluggable database PDB1 open resetlogs;
+}
+
+-- The following command shows PDB incarnation, and we can see that PDB incarnation changed after we opened the database with resetlogs
+
+select DB_INCARNATION#, con_id, PDB_INCARNATION#, PRIOR_PDB_INCARNATION#, status from v$pdb_incarnation order by 1,2;
+
+-- PDB tablespace PITR
+
+recover tablespace PDB1:USERS until SCN 1435353241123 auxiliary destination '/u01/app/oracle/oradata/aux';
+
+-- Perform flashback of CDB --
+------------------------------
+
+show parameters flashback
+
+alter system set db_flashback_retention_target = 1440;
+
+alter database flashback on;
+
+select flashback_on from v$database;
+
+-- Performing flashback of database --
+--------------------------------------
+
+-- Create a user and note down the System Change Number (SCN):
+
+create user pdb1_user identified by oracle;
+
+grant connect, resource to pdb1_user;
+
+select current_scn from v$database;
+
+-- Drop the user so that we can flashback and recover
+
+drop user pdb1_user;
+
+-- Shut down and mount the DB
+
+shut immediate
+startup mount
+
+-- Flashback the database to the noted SCN
+
+flashback database to scn 3129049
+
+-- open in read only to verify if you got the required user
+
+alter database open read only;
+
+alter pluggable database all open read only;
+
+alter session set container = pdb1;
+
+select username from dba_users where username = 'PDB1_USER';
+
+-- Shut down again and open resetlogs
+
+alter session set container = cdb$root;
+
+shut immediate
+
+startup mount
+
+alter database open resetlogs;
+
+alter pluggable database all open;
+
+-- Using SQL in RMAN --
+------------------------
+
+rman target /
+
+alter system switch logfile;
+
+desc dba_sys_privs
+
+-- Option to complete duplication with target database in mounted mode --
+--------------------------------------------------------------------------
+
+duplicate target database to orcl_dup from active database NOOPEN;
+
+-- Duplicating CDB
+
+DUPLICATE TARGET DATABASE TO ORCL_DUP SPFILE NOFILENAMECHECK;
+
+-- To duplicate the single PDB database
+
+DUPLICATE DATABASE TO CDB_NEW PLUGGABLE DATABASE PDB1;
+
+-- To duplicate multiple pluggable databases to a new container database CDB_NEW
+
+DUPLICATE DATABASE TO CDB_NEW PLUGGABLE DATABASE PDB1, PDB3;
+
+-- To duplicate all pluggable databases except one:
+
+DUPLICATE DATABASE TO CDB_NEW SKIP PLUGGABLE DATABASE PDB2;
+
+-- to duplicate only the USERS tablespace
+
+DUPLICATE DATABASE TO CDB_NEW TABLESPACE PDB1:USERS;
+
+-- Transporting databases --
+----------------------------
+
+-- Verify the prerequisite
+
+--- compatible parameter should be 12.0.0 or above
+
+show parameters compatible;
+
+--- open mode should be read only
+
+select open_mode from v$database;
+
+-- Query the exact name of the destination platform using V$TRANSPORTABLE_PLATFORM view
+
+select * from v$transportable_platform order by 1;
+
+-- Back up the database using the BACKUP command. If you are transporting the database to a different platform, you should use the CONVERT clause in the BACKUP command to convert the data to the required platform. We have  two options for converting the data
+
+--- Using To platform
+
+BACKUP TO PLATFORM ‘Solaris Operating System (x86-64)’ FORMAT /u01/backups/%U’ DATABASE
+
+--- Convert at the destination host using from platform
+
+BACKUP FOR TRANSPORT FORMAT /u01/backups/%U’ DATABASE;
+
+--- On detination, if Conversion happened on the source host
+
+RESTORE FROM PLATFORM ‘Linux x86 64-bit’ ALL FOREIGN DATAFILES FORMAT ‘/u01/app/oracle/oradata/orcl/%U’ FROM BACKUPSET ‘/u01/backups/%U’;
+
+--- If the conversion of data has to be done on the destination host
+
+RESTORE FOREIGN DATABASE TO NEW FORMAT ‘/u01/app/oracle/oradata/orcl/%U’ FROM BACKUPSET ‘/u01/backups/%U’;
+
+-- Transporting tablespaces --
+------------------------------
+
+-- Verify the prerequisite
+
+--- compatible parameter should be 12.0.0 or above
+
+show parameters compatible;
+
+--- open mode should be read only
+
+select open_mode from v$database;
+
+-- Back up the required tablespaces using either the TO PLATFORM or FOR TRANSPORT clauses depending on whether you want to convert data on the source or destination host. Use the DATAPUMP clause to indicate that an export dump file for the tablespace metadata must be created. This dump file holds the metadata of the tablespace
+
+--- On detination, if Conversion happened on the source host
+
+RESTORE FOREIGN TABLESPACE USERS FORMAT ‘/u01/app/oracle/oradata/orcl/’ FROM BACKUPSET ‘/u01/backups/%U’ DUMP FILE FROM BACKUPSET ‘/u01/backups/users.dmp’;
+
+--- If the conversion of data has to be done on the destination host
+
+RESTORE FOREIGN TABLESPACE USERS TO NEW FORMAT ‘/u01/app/oracle/oradata/orcl/’ FROM BACKUPSET ‘/u01/backups/%U’ DUMP FILE FROM BACKUPSET ‘/u01/backups/users.dmp’;
+
+
+-- Automatic table recovery using RMAN --
+-----------------------------------------
+
+-- I have a table, T1, in a non-CDB database and I will drop this table, T1, and recover the same using table recovery.
+
+select * from T1;
+
+select current_scn from v$database;
+
+drop table T1;
+
+-- Use the following command to recover this table
+
+recover table advaitd.t1 until scn 722729 auxiliary destination '/u01/app/oracle/oradata/aux';
+
+select * from T1;
+

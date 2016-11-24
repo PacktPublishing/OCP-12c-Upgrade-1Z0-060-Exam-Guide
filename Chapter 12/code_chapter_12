@@ -1,0 +1,90 @@
+Codes and commands for chapter 12
+=================================
+
+-- Logical storage structure --
+-------------------------------
+
+-- Following example shows uniform extent allocation
+
+CREATE TABLESPACE user_tbs DATAFILE '/u01/oradata/user_tbs_01.dbf' SIZE 100M EXTENT MANAGEMENT LOCAL UNIFORM SIZE 1M;
+
+-- Following example shows variable size extent allocation
+
+CREATE TABLESPACE user_tbs DATAFILE '/u01/oradata/user_tbs_01.dbf' SIZE 100M 
+DEFAULT STORAGE (INITIAL 10M NEXT 1M PCTINCREASE 10);
+
+-- undo advisor a PL/SQL interface --
+-------------------------------------
+
+-- The following example creates an undo advisor task to evaluate the UNDO tablespace
+
+DECLARE
+   tid    NUMBER;
+   tname  VARCHAR2(30);
+   oid    NUMBER;
+BEGIN
+   DBMS_ADVISOR.CREATE_TASK('Undo Advisor', tid, tname, 'Undo Advisor Task');
+   DBMS_ADVISOR.CREATE_OBJECT(tname, 'UNDO_TBS', null, null, null, 'null', oid);
+   DBMS_ADVISOR.SET_TASK_PARAMETER(tname, 'TARGET_OBJECTS', oid);
+   DBMS_ADVISOR.SET_TASK_PARAMETER(tname, 'START_SNAPSHOT', 183382);
+   DBMS_ADVISOR.SET_TASK_PARAMETER(tname, 'END_SNAPSHOT', 183476);
+   DBMS_ADVISOR.SET_TASK_PARAMETER(tname, 'INSTANCE', 1);
+   DBMS_ADVISOR.execute_task(tname);
+   DBMS_OUTPUT.PUT_LINE(tid);
+   DBMS_OUTPUT.PUT_LINE(tname);
+END;
+/
+
+-- Oracle ASM File system --
+----------------------------
+
+-- Checking ASM directory
+
+cd +data/orcl/CONTROLFILE
+
+ls
+
+-- ASM metadata backup and restore --
+-------------------------------------
+
+-- MD_BACKUP records all the diskgroups, disks, directories, the disk attributes, and so on
+
+md_backup -g dg1 -b dg1.backup
+
+-- you can restore the disk group using MD_RESTORE
+
+md_restore –-full –G dg1 dg1.backup
+
+
+-- Creating disk groups --
+--------------------------
+
+-- We can create a disk group using the following command
+
+CREATE DISKGROUP data NORMAL REDUNDANCY
+  FAILGROUP controller1 DISK
+    '/devices/diska1' NAME diska1,
+    '/devices/diska2' NAME diska2,
+    '/devices/diska3' NAME diska3,
+    '/devices/diska4' NAME diska4
+  FAILGROUP controller2 DISK
+    '/devices/diskb1' NAME diskb1,
+    '/devices/diskb2' NAME diskb2,
+    '/devices/diskb3' NAME diskb3,
+    '/devices/diskb4' NAME diskb4
+  ATTRIBUTE 'au_size'='4M',
+    'compatible.asm' = '11.2', 
+    'compatible.rdbms' = '11.2',
+    'compatible.advm' = '11.2';
+
+-- Altering disk groups --
+--------------------------
+
+-- you can use ALTER DISKGROUP to add disks to the disk group
+
+ALTER DISKGROUP data1 ADD DISK
+'/devices/diska5' NAME diska5,
+'/devices/diska6' NAME diska6,
+'/devices/diska7' NAME diska7,
+'/devices/diska8' NAME diska8;
+
